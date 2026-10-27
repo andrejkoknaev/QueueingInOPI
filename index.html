@@ -16,6 +16,7 @@
       --accent-glow: rgba(99, 102, 241, 0.25);
       --success: #10b981;
       --danger: #ef4444;
+      --warning: #f59e0b;
     }
 
     * {
@@ -26,36 +27,49 @@
 
     body {
       margin: 0;
-      padding: 14px;
+      padding: clamp(10px, 3vw, 20px);
+      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
       background-color: var(--bg);
       background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12), transparent 60%);
       color: var(--text);
       min-height: 100vh;
+      min-height: 100dvh;
+      overflow-x: hidden;
     }
 
-    /* Верхняя строка: вкладки слева + вход для старосты справа */
+    /* Центрированный адаптивный контейнер для телефонов и ПК */
+    .app-container {
+      width: 100%;
+      max-width: 660px;
+      margin: 0 auto;
+    }
+
+    /* Верхняя панель: вкладки слева + кнопка Старосты справа */
     .top-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       margin-bottom: 14px;
+      width: 100%;
     }
 
     .tabs-bar {
       display: flex;
       gap: 8px;
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
       flex: 1;
+      min-width: 0;
     }
     .tabs-bar::-webkit-scrollbar { display: none; }
 
     .tab-btn {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
+      gap: 7px;
+      padding: 10px 13px;
       border-radius: 12px;
       background: var(--card);
       color: var(--muted);
@@ -65,6 +79,7 @@
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.2s ease;
+      flex-shrink: 0;
     }
     .tab-btn.active {
       background: linear-gradient(135deg, #6366f1, #4f46e5);
@@ -83,7 +98,7 @@
       color: #a5b4fc;
     }
 
-    /* Кнопка старосты сверху справа */
+    /* Кнопка старосты сверху справа (без короны) */
     .admin-btn {
       padding: 10px 12px;
       border-radius: 12px;
@@ -101,14 +116,15 @@
       color: #34d399;
     }
 
-    /* Блоки без рамок (borderless) */
+    /* Карточки без рамок */
     .card {
       background: var(--card);
       border: none;
-      padding: 18px;
+      padding: clamp(14px, 4vw, 20px);
       border-radius: 18px;
       margin-bottom: 14px;
       box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+      width: 100%;
     }
 
     .event-header {
@@ -117,15 +133,18 @@
       align-items: flex-start;
       gap: 10px;
       margin-bottom: 12px;
+      flex-wrap: wrap;
     }
     .event-title {
-      font-size: 17px;
+      font-size: clamp(16px, 4.2vw, 18px);
       font-weight: 700;
       margin: 0 0 4px 0;
+      word-break: break-word;
     }
     .event-meta {
       font-size: 12px;
       color: var(--muted);
+      line-height: 1.4;
     }
 
     .progress-track {
@@ -146,20 +165,45 @@
       display: block;
       font-size: 12px;
       color: var(--muted);
-      margin-bottom: 6px;
+      margin-bottom: 7px;
       font-weight: 500;
     }
+
     input, select, textarea {
       width: 100%;
-      padding: 13px 14px;
-      border-radius: 12px;
-      font-size: 14px;
-      margin-bottom: 14px;
-      background: var(--input-bg);
+      border-radius: 14px;
+      font-size: 15px;
+      margin-bottom: 16px;
+      background-color: var(--input-bg);
       color: var(--text);
       border: none;
       outline: none;
     }
+
+    input, textarea {
+      padding: 14px 16px;
+    }
+
+    /* Удлиненные выпадающие списки с отодвинутой от правого края галочкой */
+    select {
+      min-height: 52px;
+      padding: 14px 48px 14px 16px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 18px center;
+      background-size: 18px;
+      cursor: pointer;
+      text-overflow: ellipsis;
+    }
+
+    select option {
+      background-color: #151a24;
+      color: #f3f4f6;
+    }
+
     textarea {
       resize: vertical;
       min-height: 110px;
@@ -168,8 +212,9 @@
 
     button.primary {
       width: 100%;
+      min-height: 50px;
       padding: 14px;
-      border-radius: 12px;
+      border-radius: 14px;
       border: none;
       background: linear-gradient(135deg, #6366f1, #4f46e5);
       color: #fff;
@@ -182,8 +227,9 @@
 
     button.danger {
       width: 100%;
+      min-height: 48px;
       padding: 13px;
-      border-radius: 12px;
+      border-radius: 14px;
       border: none;
       background: rgba(239, 68, 68, 0.15);
       color: #f87171;
@@ -196,11 +242,12 @@
       background: rgba(255, 255, 255, 0.06);
       color: var(--muted);
       border: none;
-      padding: 7px 11px;
-      border-radius: 9px;
+      padding: 8px 12px;
+      border-radius: 10px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      flex-shrink: 0;
     }
     .icon-btn.delete-event {
       color: #f87171;
@@ -215,6 +262,7 @@
       border-radius: 12px;
       display: none;
       font-weight: 500;
+      line-height: 1.4;
     }
     .status-msg.error {
       display: block;
@@ -230,7 +278,7 @@
     .my-booking-box {
       background: rgba(16, 185, 129, 0.1);
       border: none;
-      border-radius: 12px;
+      border-radius: 14px;
       padding: 14px;
       margin-bottom: 14px;
     }
@@ -241,24 +289,37 @@
       margin-bottom: 6px;
     }
 
-    /* Таблица очереди */
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    /* Адаптивная таблица очереди, которая не ломается на телефонах */
+    .table-wrap {
+      width: 100%;
+      overflow-x: hidden;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: clamp(13px, 3.5vw, 14px);
+    }
     th, td {
       text-align: left;
-      padding: 11px 8px;
+      padding: 11px 6px;
       vertical-align: middle;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     th {
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
       color: var(--muted);
       padding-top: 2px;
     }
-    tbody tr {
-      border-radius: 10px;
-    }
+
+    col.col-slot { width: 42px; }
+    col.col-user { width: 34%; }
+    col.col-topic { width: auto; }
+    col.col-action { width: 38px; }
+
     tbody tr:nth-child(even) {
       background: rgba(255, 255, 255, 0.02);
     }
@@ -293,22 +354,40 @@
     }
     .username {
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
       display: block;
       margin-top: 2px;
     }
+
+    /* Метка для повторяющихся тем */
+    .repeat-badge {
+      display: inline-block;
+      margin-top: 4px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(245, 158, 11, 0.16);
+      color: #fbbf24;
+    }
+
     .kick-btn {
       background: rgba(239, 68, 68, 0.15);
       color: #f87171;
       border: none;
-      border-radius: 7px;
-      padding: 5px 9px;
+      border-radius: 8px;
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-size: 12px;
       cursor: pointer;
       font-weight: 700;
+      padding: 0;
     }
 
-    /* Модальные окна без рамок */
+    /* Модальные окна */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -317,7 +396,7 @@
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 16px;
+      padding: 14px;
       z-index: 100;
     }
     .modal-backdrop.open { display: flex; }
@@ -325,10 +404,11 @@
       background: var(--card);
       border: none;
       border-radius: 20px;
-      padding: 20px;
+      padding: clamp(16px, 4vw, 22px);
       width: 100%;
       max-width: 440px;
       max-height: 90vh;
+      max-height: 90dvh;
       overflow-y: auto;
       box-shadow: 0 20px 50px rgba(0,0,0,0.65);
     }
@@ -341,86 +421,95 @@
       background: #10b981;
       margin-right: 6px;
       box-shadow: 0 0 8px #10b981;
+      flex-shrink: 0;
     }
   </style>
 </head>
 <body>
 
-  <!-- Верхняя панель: вкладки выступлений слева и кнопка Старосты справа -->
-  <div class="top-bar">
-    <div class="tabs-bar" id="eventsTabs"></div>
-    <button id="adminToggleBtn" class="admin-btn" onclick="handleAdminButtonClick()">
-      🔒 Староста
-    </button>
-  </div>
-
-  <div id="statusBox" class="status-msg"></div>
-
-  <!-- Основной контент выбранного выступления -->
-  <div id="eventContent">
-    <div class="card">
-      <div class="event-header">
-        <div>
-          <h2 class="event-title" id="currentEventTitle">Загрузка...</h2>
-          <div class="event-meta" id="currentEventMeta"></div>
-        </div>
-        <button id="deleteEventBtn" class="icon-btn delete-event" style="display: none;" onclick="deleteCurrentEvent()">
-          Удалить очередь
-        </button>
-      </div>
-
-      <div class="progress-track">
-        <div id="progressBar" class="progress-fill" style="width: 0%;"></div>
-      </div>
-
-      <!-- Форма записи -->
-      <div id="bookingForm">
-        <label for="slotSelect">Свободное место в очереди:</label>
-        <select id="slotSelect"></select>
-
-        <label for="topicSelect">Свободная тема:</label>
-        <select id="topicSelect"></select>
-
-        <button class="primary" id="bookBtn" onclick="bookSlot()">Записаться на выступление</button>
-      </div>
-
-      <!-- Блок, если пользователь уже записан -->
-      <div id="myBookingCard" style="display: none;">
-        <div class="my-booking-box">
-          <div class="my-booking-title">✓ Вы записаны на это выступление</div>
-          <div style="font-size: 13px; line-height: 1.5;">
-            Место в очереди: <b id="mySlot"></b><br/>
-            Выбранная тема: <b id="myTopic"></b>
-          </div>
-        </div>
-        <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
-      </div>
+  <div class="app-container">
+    <!-- Верхняя панель: вкладки слева + кнопка Старосты справа -->
+    <div class="top-bar">
+      <div class="tabs-bar" id="eventsTabs"></div>
+      <button id="adminToggleBtn" class="admin-btn" onclick="handleAdminButtonClick()">
+        Староста
+      </button>
     </div>
 
-    <!-- Таблица очереди -->
-    <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; font-size: 16px; display: flex; align-items: center;">
-          <span class="live-dot" title="Обновляется в реальном времени"></span>
-          Таблица очереди
-        </h3>
-        <span style="font-size: 11px; color: var(--muted);">Live-обновление</span>
+    <div id="statusBox" class="status-msg"></div>
+
+    <!-- Основной контент выбранного выступления -->
+    <div id="eventContent">
+      <div class="card">
+        <div class="event-header">
+          <div style="min-width: 0; flex: 1;">
+            <h2 class="event-title" id="currentEventTitle">Загрузка...</h2>
+            <div class="event-meta" id="currentEventMeta"></div>
+          </div>
+          <button id="deleteEventBtn" class="icon-btn delete-event" style="display: none;" onclick="deleteCurrentEvent()">
+            Удалить очередь
+          </button>
+        </div>
+
+        <div class="progress-track">
+          <div id="progressBar" class="progress-fill" style="width: 0%;"></div>
+        </div>
+
+        <!-- Форма записи -->
+        <div id="bookingForm">
+          <label for="slotSelect">Свободное место в очереди:</label>
+          <select id="slotSelect"></select>
+
+          <label id="topicSelectLabel" for="topicSelect">Свободная тема:</label>
+          <select id="topicSelect"></select>
+
+          <button class="primary" id="bookBtn" onclick="bookSlot()">Записаться на выступление</button>
+        </div>
+
+        <!-- Блок, если пользователь уже записан -->
+        <div id="myBookingCard" style="display: none;">
+          <div class="my-booking-box">
+            <div class="my-booking-title">✓ Вы записаны на это выступление</div>
+            <div style="font-size: 13px; line-height: 1.5; word-break: break-word;">
+              Место в очереди: <b id="mySlot"></b><br/>
+              Выбранная тема: <b id="myTopic"></b>
+            </div>
+          </div>
+          <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
+        </div>
       </div>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 44px;">№</th>
-              <th>Участник</th>
-              <th>Тема выступления</th>
-              <th id="adminActionHeader" style="width: 36px; display: none;"></th>
-            </tr>
-          </thead>
-          <tbody id="queueTableBody">
-            <tr><td colspan="4" class="free-label">Загрузка данных...</td></tr>
-          </tbody>
-        </table>
+      <!-- Таблица очереди -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px;">
+          <h3 style="margin: 0; font-size: 16px; display: flex; align-items: center;">
+            <span class="live-dot" title="Обновляется в реальном времени"></span>
+            Таблица очереди
+          </h3>
+          <span style="font-size: 11px; color: var(--muted);">Live</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <colgroup>
+              <col class="col-slot" />
+              <col class="col-user" />
+              <col class="col-topic" />
+              <col id="adminActionCol" class="col-action" style="display: none;" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Участник</th>
+                <th>Тема выступления</th>
+                <th id="adminActionHeader" style="display: none;"></th>
+              </tr>
+            </thead>
+            <tbody id="queueTableBody">
+              <tr><td colspan="4" class="free-label">Загрузка данных...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -478,9 +567,7 @@
 
     let allEvents = [];
     let selectedEventId = null;
-
     let adminCreds = JSON.parse(localStorage.getItem('tg_queue_admin_creds') || 'null');
-
     let lastOptionsSignature = '';
 
     function showStatus(text, isError = false) {
@@ -494,10 +581,10 @@
     function updateAdminButtonUI() {
       const btn = document.getElementById('adminToggleBtn');
       if (adminCreds) {
-        btn.textContent = '👑 Староста (Выйти)';
+        btn.textContent = 'Староста (Выйти)';
         btn.classList.add('logged-in');
       } else {
-        btn.textContent = '🔒 Староста';
+        btn.textContent = 'Староста';
         btn.classList.remove('logged-in');
       }
     }
@@ -543,7 +630,7 @@
         lastOptionsSignature = '';
         updateAdminButtonUI();
         renderUI();
-        showStatus('Режим старосты активирован! Теперь вы можете управлять очередями.');
+        showStatus('Режим старосты активирован');
       } catch (e) {
         showStatus(e.message, true);
       } finally {
@@ -583,13 +670,19 @@
       const takenCount = bookings.length;
       const totalSlots = currentEvent.totalSlots;
 
+      const takenTopicsSet = new Set(bookings.map(b => b.topic));
+      const uniqueFreeTopics = currentEvent.topics.filter(t => !takenTopicsSet.has(t));
+      const isRepeatMode = uniqueFreeTopics.length === 0 && currentEvent.topics.length > 0;
+
       document.getElementById('currentEventTitle').textContent = currentEvent.title;
-      document.getElementById('currentEventMeta').textContent =
-        `Занято мест: ${takenCount} из ${totalSlots} • Свободно тем: ${Math.max(0, currentEvent.topics.length - takenCount)}`;
+      document.getElementById('currentEventMeta').textContent = isRepeatMode
+        ? `Занято мест: ${takenCount} из ${totalSlots} • Уникальные темы разобраны (доступен повтор тем)`
+        : `Занято мест: ${takenCount} из ${totalSlots} • Свободных уникальных тем: ${uniqueFreeTopics.length}`;
 
       const isAdmin = Boolean(adminCreds);
       document.getElementById('deleteEventBtn').style.display = isAdmin ? 'inline-block' : 'none';
       document.getElementById('adminActionHeader').style.display = isAdmin ? 'table-cell' : 'none';
+      document.getElementById('adminActionCol').style.display = isAdmin ? 'table-column' : 'none';
 
       const percent = totalSlots > 0 ? Math.min(100, Math.round((takenCount / totalSlots) * 100)) : 0;
       document.getElementById('progressBar').style.width = `${percent}%`;
@@ -601,7 +694,7 @@
       if (myEntry) {
         formEl.style.display = 'none';
         myCardEl.style.display = 'block';
-        document.getElementById('mySlot').textContent = `№${myEntry.slot}`;
+        document.getElementById('mySlot').textContent = myEntry.slot;
         document.getElementById('myTopic').textContent = myEntry.topic;
         lastOptionsSignature = 'BOOKED';
       } else {
@@ -609,15 +702,17 @@
         myCardEl.style.display = 'none';
 
         const takenSlots = new Set(bookings.map(b => Number(b.slot)));
-        const takenTopics = new Set(bookings.map(b => b.topic));
-
         const freeSlots = [];
         for (let i = 1; i <= totalSlots; i++) {
           if (!takenSlots.has(i)) freeSlots.push(i);
         }
-        const freeTopics = currentEvent.topics.filter(t => !takenTopics.has(t));
 
-        const newSignature = `${ currentEvent.id }|${ freeSlots.join(',') }|${ freeTopics.join('||') }`;
+        const selectableTopics = isRepeatMode ? currentEvent.topics : uniqueFreeTopics;
+        document.getElementById('topicSelectLabel').textContent = isRepeatMode
+          ? 'Все темы разобраны — выберите любую тему (повтор):'
+          : 'Свободная тема:';
+
+        const newSignature = `${currentEvent.id}|${isRepeatMode ? 'R' : 'U'}|${freeSlots.join(',')}|${selectableTopics.join('||')}`;
         if (newSignature !== lastOptionsSignature) {
           const slotSelect = document.getElementById('slotSelect');
           const topicSelect = document.getElementById('topicSelect');
@@ -629,36 +724,41 @@
           freeSlots.forEach(s => {
             const opt = document.createElement('option');
             opt.value = s;
-            opt.textContent = `Место №${s}`;
+            opt.textContent = s;
             slotSelect.appendChild(opt);
           });
 
           topicSelect.innerHTML = '';
-          freeTopics.forEach(t => {
+          selectableTopics.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t;
-            opt.textContent = t;
+            opt.textContent = isRepeatMode ? `${t} (повтор)` : t;
             topicSelect.appendChild(opt);
           });
-и
+
           if (prevSlot && freeSlots.includes(Number(prevSlot))) {
             slotSelect.value = prevSlot;
           } else if (isBackgroundPoll && prevSlot && lastOptionsSignature !== '' && lastOptionsSignature !== 'BOOKED') {
-            showStatus(`⚡ Место №${prevSlot} только что заняли! Выберите другое.`, true);
+            showStatus(`⚡ Место ${prevSlot} только что заняли! Выберите другое.`, true);
           }
 
-          if (prevTopic && freeTopics.includes(prevTopic)) {
+          if (prevTopic && selectableTopics.includes(prevTopic)) {
             topicSelect.value = prevTopic;
           } else if (isBackgroundPoll && prevTopic && lastOptionsSignature !== '' && lastOptionsSignature !== 'BOOKED') {
             showStatus(`⚡ Тему «${prevTopic}» только что забрали! Список обновлен.`, true);
           }
 
           document.getElementById('bookBtn').disabled =
-            freeSlots.length === 0 || freeTopics.length === 0;
+            freeSlots.length === 0 || selectableTopics.length === 0;
 
           lastOptionsSignature = newSignature;
         }
       }
+
+      const topicCounts = {};
+      bookings.forEach(b => {
+        topicCounts[b.topic] = (topicCounts[b.topic] || 0) + 1;
+      });
 
       const tbody = document.getElementById('queueTableBody');
       tbody.innerHTML = '';
@@ -672,6 +772,7 @@
 
         if (entry) {
           const isMe = String(entry.userId) === String(currentUser.id);
+          const isRepeatedTopic = (topicCounts[entry.topic] || 0) > 1;
           tr.className = 'row-taken' + (isMe ? ' row-mine' : '');
           tr.innerHTML = `
             <td><span class="slot-badge">${i}</span></td>
@@ -679,7 +780,10 @@
               <strong>${escapeHtml(entry.userName)}</strong>
               ${entry.username ? `<span class="username">${escapeHtml(entry.username)}</span>` : ''}
             </td>
-            <td>${escapeHtml(entry.topic)}</td>
+            <td>
+              <div>${escapeHtml(entry.topic)}</div>
+              ${isRepeatedTopic ? `<span class="repeat-badge">Повторяется</span>` : ''}
+            </td>
             ${isAdmin ? `<td><button class="kick-btn" title="Освободить место" onclick="adminRemoveSlot(${i})">✕</button></td>` : ''}
           `;
         } else {
@@ -807,7 +911,7 @@
 
     async function adminRemoveSlot(slotNum) {
       if (!adminCreds) return;
-      if (!confirm(`Освободить место №${slotNum} в этой очереди?`)) return;
+      if (!confirm(`Освободить место ${slotNum} в этой очереди?`)) return;
 
       try {
         const res = await fetch('/api/queue', {
@@ -827,7 +931,7 @@
         allEvents = data.events;
         lastOptionsSignature = '';
         renderUI();
-        showStatus(`Место №${slotNum} освобождено старостой`);
+        showStatus(`Место ${slotNum} освобождено старостой`);
       } catch (e) {
         showStatus(e.message, true);
       }
