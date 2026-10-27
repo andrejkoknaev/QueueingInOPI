@@ -1,107 +1,145 @@
 import { Redis } from '@upstash/redis';
 
-// Автоматическое подключение к базе из переменных окружения Vercel
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
 });
 
-const REDIS_KEY = 'tg_queue_bookings_v1';
+const REDIS_KEY = 'tg_queue_events_v2';
 
-// Настройте количество мест и список тем под свою задачу:
-const TOTAL_SLOTS = 15;
-const TOPICS = [
-  'Тема 1. Архитектура клиент-серверных приложений',
-  'Тема 2. Бессерверные вычисления (Serverless)',
-  'Тема 3. Проектирование реляционных баз данных',
-  'Тема 4. Нереляционные БД и кэширование в Redis',
-  'Тема 5. REST API и GraphQL: сравнение подходов',
-  'Тема 6. Контейнеризация и основы Docker',
-  'Тема 7. Безопасность веб-приложений (OWASP Top 10)',
-  'Тема 8. Аутентификация: JWT, OAuth 2.0 и сессии',
-  'Тема 9. Микросервисная архитектура и брокеры сообщений',
-  'Тема 10. Оптимизация производительности фронтенда',
-  'Тема 11. CI/CD пайплайны и автоматизация деплоя',
-  'Тема 12. Тестирование ПО: Unit, Integration, E2E',
-  'Тема 13. WebSockets и приложения реального времени',
-  'Тема 14. Облачные провайдеры и балансировка нагрузки',
-  'Тема 15. Мониторинг и логирование (Prometheus, Grafana)'
+const DEFAULT_EVENTS = [
+  {
+    id: 'evt_default_1',
+    title: 'Семинар 1. Доклады',
+    totalSlots: 10,
+    topics: [],
+    createdBy: null,
+    createdAt: new Date().toISOString(),
+    bookings: []
+  }
 ];
 
 export default async function handler(req, res) {
   try {
-    let bookings = (await redis.get(REDIS_KEY)) || [];
-
-    // 1. Получение текущего состояния очереди
-    if (req.method === 'GET') {
-      return res.status(200).json({
-        totalSlots: TOTAL_SLOTS,
-        topics: TOPICS,
-        bookings
-      });
+    let events = await redis.get(REDIS_KEY);
+    if (!events || !Array.isArray(events)) {
+      events = DEFAULT_EVENTS;
+      await redis.set(REDIS_KEY, events);
     }
 
-    // 2. Запись в очередь или отмена записи
+    if (req.method === 'GET') {
+      return res.status(200).json({ events });
+    }
+
     if (req.method === 'POST') {
-      const { action, slot, topic, user } = req.body;
+      const { action, eventId, title, totalSlots, topics, slot, topic, user } = req.body;
 
       if (!user || !user.id) {
         return res.status(400).json({ error: 'Не удалось определить пользователя Telegram' });
       }
 
-      // Отмена своей записи
-      if (action === 'cancel') {
-        bookings = bookings.filter(b => String(b.userId) !== String(user.id));
-        await redis.set(REDIS_KEY, bookings);
-        return res.status(200).json({ success: true, bookings });
+      if (action === 'create_event') {
+        const cleanTitle = String(title || '').trim();
+        const slotsCount = Math.min(Math.max(Number(totalSlots) || 10, 1), 100);
+
+        if (!cleanTitle) {
+          return res.status(400).json({ error: 'Введите название выступления' });
+        }
+
+        let cleanTopics = Array.isArray(topics)
+          ? [...new Set(topics.map(t => String(t).trim()).filter(Boolean))]
+          : [];
+
+        if (cleanTopics.length === 0) {
+          cleanTopics = Array.from({ length: slotsCount }, (_, i) => `Тема №${i + 1}`);
+        }
+
+        const newEvent = {
+          id: 'evt_' + Date.now(),
+          title: cleanTitle,
+          totalSlots: slotsCount,
+          topics: cleanTopics,
+          createdBy: String(user.id),
+          creatorName: [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Староста',
+          createdAt: new Date().toISOString(),
+          bookings: []
+        };
+
+        events.push(newEvent);
+        await redis.set(REDIS_KEY, events);
+        return res.status(200).json({ success: true, events, newEventId: newEvent.id });
       }
 
-      // Новая запись
+      if (action === 'delete_event') {
+        const target = events.find(e => e.id === eventId);
+        if (!target) {
+          return res.status(404).json({ error: 'Запись не найдена' });
+        }
+        if (target.createdBy && String(target.createdBy) !== String(user.id)) {
+          return res.status(403).json({ error: 'Удалить запись может только её создатель' });
+        }
+
+        events = events.filter(e => e.id !== eventId);
+        await redis.set(REDIS_KEY, events);
+        return res.status(200).json({ success: true, events });
+      }
+
+      const eventIndex = events.findIndex(e => e.id === eventId);
+      if (eventIndex === -1) {
+        return res.status(404).json({ error: 'Выбранное выступление не найдено' });
+      }
+
+      const currentEvent = events[eventIndex];
+      let bookings = currentEvent.bookings || [];
+
+      if (action === 'cancel') {
+        currentEvent.bookings = bookings.filter(b => String(b.userId) !== String(user.id));
+        events[eventIndex] = currentEvent;
+        await redis.set(REDIS_KEY, events);
+        return res.status(200).json({ success: true, events });
+      }
+
       if (action === 'book') {
         const slotNum = Number(slot);
 
-        if (!slotNum || slotNum < 1 || slotNum > TOTAL_SLOTS) {
+        if (!slotNum || slotNum < 1 || slotNum > currentEvent.totalSlots) {
           return res.status(400).json({ error: 'Некорректный номер места' });
         }
-        if (!TOPICS.includes(topic)) {
+        if (!currentEvent.topics.includes(topic)) {
           return res.status(400).json({ error: 'Выбрана несуществующая тема' });
         }
 
-        // Проверка 1: Записан ли уже этот пользователь
         if (bookings.some(b => String(b.userId) === String(user.id))) {
-          return res.status(409).json({ error: 'Вы уже записаны в очередь. Сначала отмените текущую запись.' });
+          return res.status(409).json({ error: 'Вы уже записаны на это выступление!' });
         }
-
-        // Проверка 2: Свободно ли место
         if (bookings.some(b => Number(b.slot) === slotNum)) {
-          return res.status(409).json({ error: `Место №${slotNum} только что заняли! Выберите другое.` });
+          return res.status(409).json({ error: `Место №${slotNum} уже заняли! Выберите другое.` });
         }
-
-        // Проверка 3: Свободна ли тема
         if (bookings.some(b => b.topic === topic)) {
-          return res.status(409).json({ error: 'Эту тему уже забрали! Выберите другую.' });
+          return res.status(409).json({ error: 'Эту тему уже выбрали! Выберите другую.' });
         }
 
-        const newEntry = {
+        bookings.push({
           slot: slotNum,
           topic,
           userId: user.id,
-          userName: [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Без имени',
+          userName: [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Участник',
           username: user.username ? `@${user.username}` : '',
           updatedAt: new Date().toISOString()
-        };
+        });
 
-        bookings.push(newEntry);
         bookings.sort((a, b) => a.slot - b.slot);
+        currentEvent.bookings = bookings;
+        events[eventIndex] = currentEvent;
 
-        await redis.set(REDIS_KEY, bookings);
-        return res.status(200).json({ success: true, bookings });
+        await redis.set(REDIS_KEY, events);
+        return res.status(200).json({ success: true, events });
       }
     }
 
     return res.status(405).json({ error: 'Метод не поддерживается' });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Ошибка сервера или не подключена БД Redis' });
+    return res.status(500).json({ error: 'Ошибка сервера или базы данных' });
   }
 }
