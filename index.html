@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Запись в очередь и выбор темы</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #f4f4f9);
+      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #1c1c1e);
+      --hint: var(--tg-theme-hint-color, #6c6c70);
+      --accent: var(--tg-theme-button-color, #2481cc);
+      --accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --danger: #e53935;
+      --success: #2e7d32;
+    }
+
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); }
+    h2, h3 { margin-top: 0; }
+
+    .card {
+      background: var(--card-bg);
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    label { display: block; font-size: 13px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
+    select, button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 15px;
+      margin-bottom: 12px;
+    }
+
+    select {
+      border: 1px solid rgba(128,128,128,0.3);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button {
+      border: none;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.danger { background: var(--danger); color: #fff; margin-bottom: 0; }
+    button.refresh { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px; font-size: 13px; }
+
+    .status-msg { font-size: 14px; margin-bottom: 12px; padding: 10px; border-radius: 8px; display: none; }
+    .status-msg.error { display: block; background: rgba(229,57,53,0.12); color: var(--danger); }
+    .status-msg.ok { display: block; background: rgba(46,125,50,0.12); color: var(--success); }
+
+    /* Итоговая таблица */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(128,128,128,0.15); vertical-align: top; }
+    th { font-size: 12px; text-transform: uppercase; color: var(--hint); }
+    .slot-badge {
+      display: inline-block;
+      min-width: 26px;
+      text-align: center;
+      padding: 3px 6px;
+      border-radius: 6px;
+      font-weight: 700;
+      background: rgba(128,128,128,0.15);
+    }
+    .row-taken .slot-badge { background: var(--accent); color: var(--accent-text); }
+    .row-mine { background: rgba(36, 129, 204, 0.08); }
+    .free-label { color: var(--hint); font-style: italic; }
+    .username { color: var(--hint); font-size: 12px; display: block; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2 style="margin-bottom: 4px;">Запись на выступление</h2>
+    <div id="userGreeting" style="font-size: 13px; color: var(--hint); margin-bottom: 12px;"></div>
+    <div id="statusBox" class="status-msg"></div>
+
+    <!-- Блок формы, если пользователь еще не записан -->
+    <div id="bookingForm">
+      <label for="slotSelect">Выберите свободное место в очереди:</label>
+      <select id="slotSelect"></select>
+
+      <label for="topicSelect">Выберите свободную тему:</label>
+      <select id="topicSelect"></select>
+
+      <button id="bookBtn" onclick="bookSlot()">Записаться</button>
+    </div>
+
+    <!-- Блок информации, если пользователь уже записан -->
+    <div id="myBookingCard" style="display: none;">
+      <p style="margin-top: 0; font-size: 14px;">
+        ✅ <strong>Вы записаны!</strong><br/>
+        Место в очереди: <b id="mySlot"></b><br/>
+        Тема: <b id="myTopic"></b>
+      </p>
+      <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
+    </div>
+  </div>
+
+  <!-- Итоговая таблица очереди -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <h3 style="margin: 0;">Итоговая таблица очереди</h3>
+      <button class="refresh" style="width: auto; margin: 0;" onclick="loadQueue()">↻ Обновить</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 50px;">№</th>
+            <th>Участник</th>
+            <th>Выбранная тема</th>
+          </tr>
+        </thead>
+        <tbody id="queueTableBody">
+          <tr><td colspan="3">Загрузка данных...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // Получаем пользователя из Telegram (или тестовый профиль при открытии в обычном браузере)
+    const currentUser = tg.initDataUnsafe?.user || {
+      id: 'local_test_user',
+      first_name: 'Тестовый',
+      last_name: 'Пользователь',
+      username: 'test_user'
+    };
+
+    document.getElementById('userGreeting').textContent =
+      `Вы вошли как: ${currentUser.first_name} ${currentUser.last_name || ''} ${currentUser.username ? '(@' + currentUser.username + ')' : ''}`;
+
+    function showStatus(text, isError = false) {
+      const box = document.getElementById('statusBox');
+      box.textContent = text;
+      box.className = 'status-msg ' + (isError ? 'error' : 'ok');
+      setTimeout(() => { box.className = 'status-msg'; }, 4000);
+    }
+
+    async function loadQueue() {
+      try {
+        const res = await fetch('/api/queue');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+        renderApp(data);
+      } catch (e) {
+        showStatus(e.message, true);
+      }
+    }
+
+    function renderApp({ totalSlots, topics, bookings }) {
+      const myEntry = bookings.find(b => String(b.userId) === String(currentUser.id));
+      const formEl = document.getElementById('bookingForm');
+      const myCardEl = document.getElementById('myBookingCard');
+
+      // 1. Отображаем форму или карточку текущей записи
+      if (myEntry) {
+        formEl.style.display = 'none';
+        myCardEl.style.display = 'block';
+        document.getElementById('mySlot').textContent = `№${myEntry.slot}`;
+        document.getElementById('myTopic').textContent = myEntry.topic;
+      } else {
+        formEl.style.display = 'block';
+        myCardEl.style.display = 'none';
+
+        const takenSlots = new Set(bookings.map(b => Number(b.slot)));
+        const takenTopics = new Set(bookings.map(b => b.topic));
+
+        // Заполняем селект свободных мест
+        const slotSelect = document.getElementById('slotSelect');
+        slotSelect.innerHTML = '';
+        for (let i = 1; i <= totalSlots; i++) {
+          if (!takenSlots.has(i)) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = `Место №${i}`;
+            slotSelect.appendChild(opt);
+          }
+        }
+
+        // Заполняем селект свободных тем
+        const topicSelect = document.getElementById('topicSelect');
+        topicSelect.innerHTML = '';
+        topics.forEach(t => {
+          if (!takenTopics.has(t)) {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            topicSelect.appendChild(opt);
+          }
+        });
+
+        document.getElementById('bookBtn').disabled =
+          slotSelect.options.length === 0 || topicSelect.options.length === 0;
+      }
+
+      // 2. Строим итоговую таблицу по всем местам (1 .. totalSlots)
+      const tbody = document.getElementById('queueTableBody');
+      tbody.innerHTML = '';
+
+      const bookingBySlot = {};
+      bookings.forEach(b => { bookingBySlot[Number(b.slot)] = b; });
+
+      for (let i = 1; i <= totalSlots; i++) {
+        const entry = bookingBySlot[i];
+        const tr = document.createElement('tr');
+
+        if (entry) {
+          const isMe = String(entry.userId) === String(currentUser.id);
+          tr.className = 'row-taken' + (isMe ? ' row-mine' : '');
+          tr.innerHTML = `
+            <td><span class="slot-badge">${i}</span></td>
+            <td>
+              <strong>${escapeHtml(entry.userName)}</strong>
+              ${entry.username ? `<span class="username">${escapeHtml(entry.username)}</span>` : ''}
+            </td>
+            <td>${escapeHtml(entry.topic)}</td>
+          `;
+        } else {
+          tr.innerHTML = `
+            <td><span class="slot-badge">${i}</span></td>
+            <td class="free-label">Свободно</td>
+            <td class="free-label">—</td>
+          `;
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function bookSlot() {
+      const slot = document.getElementById('slotSelect').value;
+      const topic = document.getElementById('topicSelect').value;
+      const btn = document.getElementById('bookBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'book', slot, topic, user: currentUser })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Не удалось записаться');
+        showStatus('Вы успешно записались в очередь!');
+        loadQueue();
+      } catch (e) {
+        showStatus(e.message, true);
+        loadQueue();
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function cancelSlot() {
+      const btn = document.getElementById('cancelBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', user: currentUser })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка отмены');
+        showStatus('Запись отменена. Вы можете выбрать новое место и тему.');
+        loadQueue();
+      } catch (e) {
+        showStatus(e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    loadQueue();
+  </script>
+</body>
+</html>
