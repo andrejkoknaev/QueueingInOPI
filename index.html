@@ -2,132 +2,443 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Запись в очередь и выбор темы</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Запись на выступления</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg: var(--tg-theme-bg-color, #f4f4f9);
-      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
-      --text: var(--tg-theme-text-color, #1c1c1e);
-      --hint: var(--tg-theme-hint-color, #6c6c70);
-      --accent: var(--tg-theme-button-color, #2481cc);
-      --accent-text: var(--tg-theme-button-text-color, #ffffff);
-      --danger: #e53935;
-      --success: #2e7d32;
+      --bg: #0b0e14;
+      --card: #151923;
+      --card-hover: #1c2230;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-glow: rgba(99, 102, 241, 0.25);
+      --success: #10b981;
+      --danger: #ef4444;
     }
 
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); }
-    h2, h3 { margin-top: 0; }
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
 
-    .card {
-      background: var(--card-bg);
+    body {
+      margin: 0;
       padding: 16px;
-      border-radius: 12px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      background-color: var(--bg);
+      background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.14), transparent 60%);
+      color: var(--text);
+      min-height: 100vh;
     }
 
-    label { display: block; font-size: 13px; color: var(--hint); margin-bottom: 6px; font-weight: 500; }
-    select, button {
-      width: 100%;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 15px;
+    /* Верхняя шапка */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 10px;
+    }
+    .header-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.3px;
+    }
+    .user-pill {
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.05);
+      padding: 5px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+
+    /* Вкладки выступлений */
+    .tabs-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+      margin-bottom: 14px;
+      scrollbar-width: none;
+    }
+    .tabs-bar::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+      width: auto;
+      margin: 0;
+    }
+    .tab-btn.active {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: #ffffff;
+      border-color: transparent;
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+    .tab-count {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.25);
+      color: inherit;
+    }
+    .tab-btn.add-btn {
+      background: rgba(99, 102, 241, 0.12);
+      color: #818cf8;
+      border: 1px dashed rgba(99, 102, 241, 0.4);
+    }
+
+    /* Карточки */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 18px;
+      border-radius: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    .event-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
       margin-bottom: 12px;
     }
-
-    select {
-      border: 1px solid rgba(128,128,128,0.3);
-      background: var(--bg);
-      color: var(--text);
+    .event-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    .event-meta {
+      font-size: 12px;
+      color: var(--muted);
     }
 
-    button {
+    /* Прогресс заполнения */
+    .progress-track {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #10b981);
+      border-radius: 99px;
+      transition: width 0.3s ease;
+    }
+
+    /* Формы и кнопки */
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 14px;
+      background: #0f131b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      outline: none;
+      transition: border 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 110px;
+      line-height: 1.4;
+    }
+
+    button.primary {
+      width: 100%;
+      padding: 13px;
+      border-radius: 10px;
       border: none;
-      background: var(--accent);
-      color: var(--accent-text);
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 14px var(--accent-glow);
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    button.primary:active { transform: scale(0.99); }
+    button.primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+    button.danger {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
     }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.danger { background: var(--danger); color: #fff; margin-bottom: 0; }
-    button.refresh { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px; font-size: 13px; }
 
-    .status-msg { font-size: 14px; margin-bottom: 12px; padding: 10px; border-radius: 8px; display: none; }
-    .status-msg.error { display: block; background: rgba(229,57,53,0.12); color: var(--danger); }
-    .status-msg.ok { display: block; background: rgba(46,125,50,0.12); color: var(--success); }
+    .icon-btn {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 7px 11px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .icon-btn.delete-event {
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.25);
+      background: rgba(239, 68, 68, 0.08);
+    }
 
-    /* Итоговая таблица */
+    /* Уведомления */
+    .status-msg {
+      font-size: 13px;
+      margin-bottom: 14px;
+      padding: 11px 14px;
+      border-radius: 10px;
+      display: none;
+      font-weight: 500;
+    }
+    .status-msg.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.14);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .status-msg.ok {
+      display: block;
+      background: rgba(16, 185, 129, 0.14);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    /* Карточка активной записи пользователя */
+    .my-booking-box {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .my-booking-title {
+      color: #34d399;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    /* Таблица очереди */
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(128,128,128,0.15); vertical-align: top; }
-    th { font-size: 12px; text-transform: uppercase; color: var(--hint); }
-    .slot-badge {
-      display: inline-block;
-      min-width: 26px;
-      text-align: center;
-      padding: 3px 6px;
-      border-radius: 6px;
-      font-weight: 700;
-      background: rgba(128,128,128,0.15);
+    th, td {
+      text-align: left;
+      padding: 12px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
     }
-    .row-taken .slot-badge { background: var(--accent); color: var(--accent-text); }
-    .row-mine { background: rgba(36, 129, 204, 0.08); }
-    .free-label { color: var(--hint); font-style: italic; }
-    .username { color: var(--hint); font-size: 12px; display: block; }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      padding-top: 4px;
+    }
+    tr:last-child td { border-bottom: none; }
+
+    .slot-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+    }
+    .row-taken .slot-badge {
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+    }
+    .row-mine {
+      background: rgba(99, 102, 241, 0.07);
+    }
+    .row-mine .slot-badge {
+      background: var(--accent);
+      color: #fff;
+    }
+    .free-label {
+      color: rgba(156, 163, 175, 0.45);
+      font-style: italic;
+    }
+    .username {
+      color: var(--muted);
+      font-size: 12px;
+      display: block;
+      margin-top: 2px;
+    }
+
+    /* Модальное окно создания записи */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px;
+      width: 100%;
+      max-width: 440px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2 style="margin-bottom: 4px;">Запись на выступление</h2>
-    <div id="userGreeting" style="font-size: 13px; color: var(--hint); margin-bottom: 12px;"></div>
-    <div id="statusBox" class="status-msg"></div>
+  <!-- Верхняя панель -->
+  <div class="header">
+    <h1 class="header-title">Очередь выступлений</h1>
+    <div id="userGreeting" class="user-pill"></div>
+  </div>
 
-    <!-- Блок формы, если пользователь еще не записан -->
-    <div id="bookingForm">
-      <label for="slotSelect">Выберите свободное место в очереди:</label>
-      <select id="slotSelect"></select>
+  <!-- Переключатель между несколькими записями на выступление -->
+  <div class="tabs-bar" id="eventsTabs"></div>
 
-      <label for="topicSelect">Выберите свободную тему:</label>
-      <select id="topicSelect"></select>
+  <div id="statusBox" class="status-msg"></div>
 
-      <button id="bookBtn" onclick="bookSlot()">Записаться</button>
+  <!-- Основной контент выбранного выступления -->
+  <div id="eventContent">
+    <div class="card">
+      <div class="event-header">
+        <div>
+          <h2 class="event-title" id="currentEventTitle">Загрузка...</h2>
+          <div class="event-meta" id="currentEventMeta"></div>
+        </div>
+        <button id="deleteEventBtn" class="icon-btn delete-event" style="display: none;" onclick="deleteCurrentEvent()">
+          Удалить
+        </button>
+      </div>
+
+      <div class="progress-track">
+        <div id="progressBar" class="progress-fill" style="width: 0%;"></div>
+      </div>
+
+      <!-- Форма записи -->
+      <div id="bookingForm">
+        <label for="slotSelect">Свободное место в очереди:</label>
+        <select id="slotSelect"></select>
+
+        <label for="topicSelect">Свободная тема:</label>
+        <select id="topicSelect"></select>
+
+        <button class="primary" id="bookBtn" onclick="bookSlot()">Записаться на выступление</button>
+      </div>
+
+      <!-- Блок, если пользователь уже записан в этом выступлении -->
+      <div id="myBookingCard" style="display: none;">
+        <div class="my-booking-box">
+          <div class="my-booking-title">✓ Вы записаны на это выступление</div>
+          <div style="font-size: 13px; line-height: 1.5;">
+            Место в очереди: <b id="mySlot"></b><br/>
+            Выбранная тема: <b id="myTopic"></b>
+          </div>
+        </div>
+        <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
+      </div>
     </div>
 
-    <!-- Блок информации, если пользователь уже записан -->
-    <div id="myBookingCard" style="display: none;">
-      <p style="margin-top: 0; font-size: 14px;">
-        ✅ <strong>Вы записаны!</strong><br/>
-        Место в очереди: <b id="mySlot"></b><br/>
-        Тема: <b id="myTopic"></b>
-      </p>
-      <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
+    <!-- Таблица очереди -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0; font-size: 16px;">Таблица очереди</h3>
+        <button class="icon-btn" onclick="loadEvents()">↻ Обновить</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 48px;">№</th>
+              <th>Участник</th>
+              <th>Тема выступления</th>
+            </tr>
+          </thead>
+          <tbody id="queueTableBody">
+            <tr><td colspan="3" class="free-label">Загрузка данных...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- Итоговая таблица очереди -->
-  <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-      <h3 style="margin: 0;">Итоговая таблица очереди</h3>
-      <button class="refresh" style="width: auto; margin: 0;" onclick="loadQueue()">↻ Обновить</button>
-    </div>
+  <!-- Модальное окно создания новой записи на выступление -->
+  <div id="createModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="margin: 0; font-size: 17px;">Новая запись на выступление</h3>
+        <button class="icon-btn" onclick="closeCreateModal()">✕</button>
+      </div>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 50px;">№</th>
-            <th>Участник</th>
-            <th>Выбранная тема</th>
-          </tr>
-        </thead>
-        <tbody id="queueTableBody">
-          <tr><td colspan="3">Загрузка данных...</td></tr>
-        </tbody>
-      </table>
+      <label for="newEventTitle">Название (предмет, дата или семинар):</label>
+      <input id="newEventTitle" type="text" placeholder="Например: Семинар 4 — Доклады по ИИ" />
+
+      <label for="newEventSlots">Количество мест в очереди:</label>
+      <input id="newEventSlots" type="number" min="1" max="100" value="15" />
+
+      <label for="newEventTopics">
+        Список тем (каждая тема с новой строки):
+      </label>
+      <textarea id="newEventTopics" placeholder="Тема 1. Введение&#10;Тема 2. Аналитика&#10;Тема 3. Архитектура&#10;(если оставить пустым, темы пронумеруются автоматически)"></textarea>
+
+      <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
     </div>
   </div>
 
@@ -136,7 +447,6 @@
     tg.ready();
     tg.expand();
 
-    // Получаем пользователя из Telegram (или тестовый профиль при открытии в обычном браузере)
     const currentUser = tg.initDataUnsafe?.user || {
       id: 'local_test_user',
       first_name: 'Тестовый',
@@ -145,7 +455,10 @@
     };
 
     document.getElementById('userGreeting').textContent =
-      `Вы вошли как: ${currentUser.first_name} ${currentUser.last_name || ''} ${currentUser.username ? '(@' + currentUser.username + ')' : ''}`;
+      `${currentUser.first_name} ${currentUser.username ? '(@' + currentUser.username + ')' : ''}`;
+
+    let allEvents = [];
+    let selectedEventId = null;
 
     function showStatus(text, isError = false) {
       const box = document.getElementById('statusBox');
@@ -154,23 +467,52 @@
       setTimeout(() => { box.className = 'status-msg'; }, 4000);
     }
 
-    async function loadQueue() {
+    async function loadEvents() {
       try {
         const res = await fetch('/api/queue');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
-        renderApp(data);
+
+        allEvents = data.events || [];
+        if (allEvents.length > 0 && !allEvents.some(e => e.id === selectedEventId)) {
+          selectedEventId = allEvents[0].id;
+        }
+        renderUI();
       } catch (e) {
         showStatus(e.message, true);
       }
     }
 
-    function renderApp({ totalSlots, topics, bookings }) {
+    function renderUI() {
+      renderTabs();
+      const currentEvent = allEvents.find(e => e.id === selectedEventId);
+      const contentEl = document.getElementById('eventContent');
+
+      if (!currentEvent) {
+        contentEl.style.display = 'none';
+        return;
+      }
+      contentEl.style.display = 'block';
+
+      const bookings = currentEvent.bookings || [];
+      const takenCount = bookings.length;
+      const totalSlots = currentEvent.totalSlots;
+
+      document.getElementById('currentEventTitle').textContent = currentEvent.title;
+      document.getElementById('currentEventMeta').textContent =
+        `Занято мест: ${takenCount} из ${totalSlots} • Доступно тем: ${currentEvent.topics.length - takenCount}`;
+
+      const canDelete = !currentEvent.createdBy || String(currentEvent.createdBy) === String(currentUser.id);
+      document.getElementById('deleteEventBtn').style.display = canDelete ? 'inline-block' : 'none';
+
+      const percent = totalSlots > 0 ? Math.min(100, Math.round((takenCount / totalSlots) * 100)) : 0;
+      document.getElementById('progressBar').style.width = `${percent}%`;
+
+      // Проверка: записан ли текущий пользователь в этом выступлении
       const myEntry = bookings.find(b => String(b.userId) === String(currentUser.id));
       const formEl = document.getElementById('bookingForm');
       const myCardEl = document.getElementById('myBookingCard');
 
-      // 1. Отображаем форму или карточку текущей записи
       if (myEntry) {
         formEl.style.display = 'none';
         myCardEl.style.display = 'block';
@@ -183,7 +525,6 @@
         const takenSlots = new Set(bookings.map(b => Number(b.slot)));
         const takenTopics = new Set(bookings.map(b => b.topic));
 
-        // Заполняем селект свободных мест
         const slotSelect = document.getElementById('slotSelect');
         slotSelect.innerHTML = '';
         for (let i = 1; i <= totalSlots; i++) {
@@ -195,10 +536,9 @@
           }
         }
 
-        // Заполняем селект свободных тем
         const topicSelect = document.getElementById('topicSelect');
         topicSelect.innerHTML = '';
-        topics.forEach(t => {
+        currentEvent.topics.forEach(t => {
           if (!takenTopics.has(t)) {
             const opt = document.createElement('option');
             opt.value = t;
@@ -211,7 +551,6 @@
           slotSelect.options.length === 0 || topicSelect.options.length === 0;
       }
 
-      // 2. Строим итоговую таблицу по всем местам (1 .. totalSlots)
       const tbody = document.getElementById('queueTableBody');
       tbody.innerHTML = '';
 
@@ -244,6 +583,109 @@
       }
     }
 
+    function renderTabs() {
+      const container = document.getElementById('eventsTabs');
+      container.innerHTML = '';
+
+      allEvents.forEach(ev => {
+        const btn = document.createElement('button');
+        btn.className = 'tab-btn' + (ev.id === selectedEventId ? ' active' : '');
+        const count = (ev.bookings || []).length;
+        btn.innerHTML = `
+          <span>${escapeHtml(ev.title)}</span>
+          <span class="tab-count">${count}/${ev.totalSlots}</span>
+        `;
+        btn.onclick = () => {
+          selectedEventId = ev.id;
+          renderUI();
+        };
+        container.appendChild(btn);
+      });
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'tab-btn add-btn';
+      addBtn.textContent = '+ Добавить запись';
+      addBtn.onclick = openCreateModal;
+      container.appendChild(addBtn);
+    }
+
+    function openCreateModal() {
+      document.getElementById('createModal').classList.add('open');
+    }
+
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('open');
+    }
+
+    async function createNewEvent() {
+      const title = document.getElementById('newEventTitle').value.trim();
+      const totalSlots = Number(document.getElementById('newEventSlots').value) || 15;
+      const rawTopics = document.getElementById('newEventTopics').value;
+      const topics = rawTopics.split('\n').map(s => s.trim()).filter(Boolean);
+
+      if (!title) {
+        showStatus('Укажите название выступления', true);
+        return;
+      }
+
+      const btn = document.getElementById('createEventBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_event',
+            title,
+            totalSlots,
+            topics,
+            user: currentUser
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка создания записи');
+
+        allEvents = data.events;
+        selectedEventId = data.newEventId;
+        document.getElementById('newEventTitle').value = '';
+        document.getElementById('newEventTopics').value = '';
+        closeCreateModal();
+        renderUI();
+        showStatus('Новая запись на выступление создана!');
+      } catch (e) {
+        showStatus(e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function deleteCurrentEvent() {
+      if (!selectedEventId) return;
+      if (!confirm('Удалить эту запись на выступление и всю её очередь?')) return;
+
+      try {
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'delete_event',
+            eventId: selectedEventId,
+            user: currentUser
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка удаления');
+
+        allEvents = data.events;
+        selectedEventId = allEvents[0]?.id || null;
+        renderUI();
+        showStatus('Запись удалена');
+      } catch (e) {
+        showStatus(e.message, true);
+      }
+    }
+
     async function bookSlot() {
       const slot = document.getElementById('slotSelect').value;
       const topic = document.getElementById('topicSelect').value;
@@ -254,15 +696,23 @@
         const res = await fetch('/api/queue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'book', slot, topic, user: currentUser })
+          body: JSON.stringify({
+            action: 'book',
+            eventId: selectedEventId,
+            slot,
+            topic,
+            user: currentUser
+          })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Не удалось записаться');
+
+        allEvents = data.events;
+        renderUI();
         showStatus('Вы успешно записались в очередь!');
-        loadQueue();
       } catch (e) {
         showStatus(e.message, true);
-        loadQueue();
+        loadEvents();
       } finally {
         btn.disabled = false;
       }
@@ -276,12 +726,18 @@
         const res = await fetch('/api/queue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'cancel', user: currentUser })
+          body: JSON.stringify({
+            action: 'cancel',
+            eventId: selectedEventId,
+            user: currentUser
+          })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка отмены');
-        showStatus('Запись отменена. Вы можете выбрать новое место и тему.');
-        loadQueue();
+
+        allEvents = data.events;
+        renderUI();
+        showStatus('Запись отменена. Место и тема снова свободны.');
       } catch (e) {
         showStatus(e.message, true);
       } finally {
@@ -295,7 +751,7 @@
       }[m]));
     }
 
-    loadQueue();
+    loadEvents();
   </script>
 </body>
 </html>
