@@ -92,6 +92,7 @@ export default async function handler(req, res) {
       try {
         let events = (await redis.get(REDIS_KEY)) || DEFAULT_EVENTS;
 
+        // Действия для старосты
         if (['create_event', 'delete_event', 'admin_remove_booking'].includes(action)) {
           if (!isValidAdmin(adminLogin, adminPassword)) {
             return res.status(403).json({ error: 'Доступ запрещен: требуется вход для старосты' });
@@ -179,13 +180,17 @@ export default async function handler(req, res) {
           }
           if (bookings.some(b => Number(b.slot) === slotNum)) {
             return res.status(409).json({
-              error: `⚡ Кто-то оказался быстрее на доли секунды и занял Место №${slotNum}! Выберите другое.`,
+              error: `⚡ Кто-то оказался быстрее на доли секунды и занял место ${slotNum}! Выберите другое.`,
               events
             });
           }
-          if (bookings.some(b => b.topic === topic)) {
+
+          const takenTopicsSet = new Set(bookings.map(b => b.topic));
+          const untakenTopics = currentEvent.topics.filter(t => !takenTopicsSet.has(t));
+
+          if (untakenTopics.length > 0 && takenTopicsSet.has(topic)) {
             return res.status(409).json({
-              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую.',
+              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую из свободных.',
               events
             });
           }
