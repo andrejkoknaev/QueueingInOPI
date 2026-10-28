@@ -43,7 +43,6 @@
       margin: 0 auto;
     }
 
-    /* Верхняя панель: вкладки слева + кнопка Старосты справа */
     .top-bar {
       display: flex;
       justify-content: space-between;
@@ -61,8 +60,14 @@
       scrollbar-width: none;
       flex: 1;
       min-width: 0;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .tabs-bar::-webkit-scrollbar { display: none; }
+    .tabs-bar.dragging {
+      cursor: grabbing;
+    }
 
     .tab-btn {
       display: inline-flex;
@@ -77,8 +82,12 @@
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
-      transition: all 0.2s ease;
+      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       flex-shrink: 0;
+      user-select: none;
+    }
+    .tabs-bar.dragging .tab-btn {
+      cursor: grabbing;
     }
     .tab-btn.active {
       background: linear-gradient(135deg, #6366f1, #4f46e5);
@@ -114,7 +123,6 @@
       color: #34d399;
     }
 
-    /* Карточки без рамок */
     .card {
       background: var(--card);
       border: none;
@@ -167,7 +175,6 @@
       font-weight: 500;
     }
 
-    /* 16px предотвращает авто-зум экрана в Telegram на iOS */
     input, select, textarea {
       width: 100%;
       border-radius: 14px;
@@ -286,7 +293,6 @@
       margin-bottom: 6px;
     }
 
-    /* Адаптивная таблица очереди */
     .table-wrap {
       width: 100%;
       overflow-x: hidden;
@@ -444,7 +450,6 @@
 
     <div id="statusBox" class="status-msg"></div>
 
-    <!-- Заглушка, если все очереди удалены -->
     <div id="emptyStateCard" class="card" style="display: none; text-align: center; padding: 32px 18px;">
       <div style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Нет активных очередей</div>
       <div style="font-size: 13px; color: var(--muted);">
@@ -452,7 +457,6 @@
       </div>
     </div>
 
-    <!-- Основной контент выбранного выступления -->
     <div id="eventContent">
       <div class="card">
         <div class="event-header">
@@ -469,7 +473,6 @@
           <div id="progressBar" class="progress-fill" style="width: 0%;"></div>
         </div>
 
-        <!-- Форма записи -->
         <div id="bookingForm">
           <label for="slotSelect">Свободное место в очереди:</label>
           <select id="slotSelect"></select>
@@ -480,7 +483,6 @@
           <button class="primary" id="bookBtn" onclick="bookSlot()">Записаться на выступление</button>
         </div>
 
-        <!-- Блок, если пользователь уже записан -->
         <div id="myBookingCard" style="display: none;">
           <div class="my-booking-box">
             <div class="my-booking-title">✓ Вы записаны на это выступление</div>
@@ -493,7 +495,6 @@
         </div>
       </div>
 
-      <!-- Таблица очереди -->
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px;">
           <h3 style="margin: 0; font-size: 16px; display: flex; align-items: center;">
@@ -528,7 +529,6 @@
     </div>
   </div>
 
-  <!-- Модальное окно входа для старосты -->
   <div id="adminLoginModal" class="modal-backdrop">
     <div class="modal-card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -546,7 +546,6 @@
     </div>
   </div>
 
-  <!-- Модальное окно создания новой записи -->
   <div id="createModal" class="modal-backdrop">
     <div class="modal-card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -554,20 +553,19 @@
         <button class="icon-btn" onclick="closeCreateModal()">✕</button>
       </div>
 
-      <label for="newEventTitle">Название (предмет, дата или семинар):</label>
-      <input id="newEventTitle" type="text" placeholder="Например: Семинар 4 — Доклады" />
+      <label for="newEventTitle">Название (Трек)(Предмет)(Дата):</label>
+      <input id="newEventTitle" type="text" placeholder="Например: ИБ Пихология 10.10" />
 
       <label for="newEventSlots">Количество мест в очереди:</label>
       <input id="newEventSlots" type="number" min="1" max="100" value="15" />
 
       <label for="newEventTopics">Список тем (каждая тема с новой строки):</label>
-      <textarea id="newEventTopics" placeholder="Тема 1. Введение&#10;Тема 2. Аналитика&#10;(если оставить пустым, темы пронумеруются автоматически)"></textarea>
+      <textarea id="newEventTopics" placeholder="Тема 1.;Тема 2.;Если оставить пустым, темы пронумеруются автоматически"></textarea>
 
       <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
     </div>
   </div>
 
-  <!-- Кастомное окно подтверждения (работает во всех Telegram WebView на iOS, Android и ПК) -->
   <div id="confirmModal" class="modal-backdrop">
     <div class="modal-card">
       <div id="confirmModalText" style="font-size: 15px; font-weight: 600; line-height: 1.45;"></div>
@@ -613,8 +611,55 @@
     let selectedEventId = null;
     let adminCreds = JSON.parse(localStorage.getItem('tg_queue_admin_creds') || 'null');
     let lastOptionsSignature = '';
+    let lastTabsSignature = '';
     let isPolling = false;
     let isMutating = false;
+
+    let isDraggingTabs = false;
+    let tabsDragMoved = false;
+
+    function initTabsDesktopScroll() {
+      const slider = document.getElementById('eventsTabs');
+      let isDown = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      slider.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          slider.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+
+      slider.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        isDown = true;
+        isDraggingTabs = true;
+        tabsDragMoved = false;
+        startX = e.pageX - slider.offsetLeft;
+        startScrollLeft = slider.scrollLeft;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        const x = e.pageX - slider.offsetLeft;
+        const walk = x - startX;
+        if (Math.abs(walk) > 5) {
+          tabsDragMoved = true;
+          slider.classList.add('dragging');
+          e.preventDefault();
+          slider.scrollLeft = startScrollLeft - walk;
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDown) return;
+        isDown = false;
+        isDraggingTabs = false;
+        slider.classList.remove('dragging');
+        setTimeout(() => { tabsDragMoved = false; }, 50);
+      });
+    }
 
     function askConfirm(message) {
       return new Promise(resolve => {
@@ -658,6 +703,7 @@
           adminCreds = null;
           localStorage.removeItem('tg_queue_admin_creds');
           lastOptionsSignature = '';
+          lastTabsSignature = '';
           updateAdminButtonUI();
           renderUI();
           showStatus('Вы вышли из режима старосты');
@@ -691,6 +737,7 @@
         document.getElementById('adminPassInput').value = '';
         closeAdminModal();
         lastOptionsSignature = '';
+        lastTabsSignature = '';
         updateAdminButtonUI();
         renderUI();
         showStatus('Режим старосты активирован');
@@ -702,7 +749,7 @@
     }
 
     async function loadEvents(isBackgroundPoll = false) {
-      if (isPolling || (isBackgroundPoll && isMutating)) return;
+      if (isPolling || (isBackgroundPoll && (isMutating || isDraggingTabs))) return;
       isPolling = true;
 
       try {
@@ -873,6 +920,13 @@
 
     function renderTabs() {
       const container = document.getElementById('eventsTabs');
+      const newTabsSig = allEvents.map(ev => `${ev.id}:${ev.title}:${(ev.bookings || []).length}/${ev.totalSlots}`).join('|')
+        + `|sel:${selectedEventId}|adm:${Boolean(adminCreds)}`;
+
+      if (newTabsSig === lastTabsSignature) return;
+      lastTabsSignature = newTabsSig;
+
+      const prevScroll = container.scrollLeft;
       container.innerHTML = '';
 
       allEvents.forEach(ev => {
@@ -884,6 +938,7 @@
           <span class="tab-count">${count}/${ev.totalSlots}</span>
         `;
         btn.onclick = () => {
+          if (tabsDragMoved) return;
           selectedEventId = ev.id;
           lastOptionsSignature = '';
           renderUI();
@@ -895,9 +950,14 @@
         const addBtn = document.createElement('button');
         addBtn.className = 'tab-btn add-btn';
         addBtn.textContent = '+ Добавить запись';
-        addBtn.onclick = openCreateModal;
+        addBtn.onclick = () => {
+          if (tabsDragMoved) return;
+          openCreateModal();
+        };
         container.appendChild(addBtn);
       }
+
+      container.scrollLeft = prevScroll;
     }
 
     function openCreateModal() {
@@ -943,6 +1003,7 @@
         allEvents = data.events;
         selectedEventId = data.newEventId;
         lastOptionsSignature = '';
+        lastTabsSignature = '';
         document.getElementById('newEventTitle').value = '';
         document.getElementById('newEventTopics').value = '';
         closeCreateModal();
@@ -979,6 +1040,7 @@
         allEvents = data.events;
         selectedEventId = allEvents[0]?.id || null;
         lastOptionsSignature = '';
+        lastTabsSignature = '';
         renderUI();
         showStatus('Очередь удалена');
       } catch (e) {
@@ -1011,6 +1073,7 @@
 
         allEvents = data.events;
         lastOptionsSignature = '';
+        lastTabsSignature = '';
         renderUI();
         showStatus(`Место ${slotNum} освобождено старостой`);
       } catch (e) {
@@ -1045,6 +1108,7 @@
         if (data.events) {
           allEvents = data.events;
           lastOptionsSignature = '';
+          lastTabsSignature = '';
           renderUI();
         }
 
@@ -1079,6 +1143,7 @@
 
         allEvents = data.events;
         lastOptionsSignature = '';
+        lastTabsSignature = '';
         renderUI();
         showStatus('Запись отменена. Место и тема снова свободны.');
       } catch (e) {
@@ -1095,12 +1160,19 @@
       }[m]));
     }
 
+    initTabsDesktopScroll();
     updateAdminButtonUI();
     loadEvents(false);
 
     setInterval(() => {
-      if (!document.hidden) loadEvents(true);
-    }, 1500);
+      if (document.hidden) return;
+      const isAlreadyBooked = lastOptionsSignature === 'BOOKED';
+      const now = Date.now();
+      if (!isAlreadyBooked || !window._lastSlowPoll || now - window._lastSlowPoll >= 3000) {
+        window._lastSlowPoll = now;
+        loadEvents(true);
+      }
+    }, 1000);
   </script>
 </body>
 </html>
