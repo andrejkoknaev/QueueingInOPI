@@ -1,4 +1,5 @@
 import { Redis } from '@upstash/redis';
+import crypto from 'crypto';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
@@ -20,16 +21,42 @@ const DEFAULT_EVENTS = [
 ];
 
 function isValidAdmin(login, password) {
-  const envLogin = process.env.ADMIN_LOGIN;
-  const envPass = process.env.ADMIN_PASSWORD;
+  const envLogin = (process.env.ADMIN_LOGIN || '').trim();
+  const envPass = (process.env.ADMIN_PASSWORD || '').trim();
   if (!envLogin || !envPass) return false;
-  return String(login) === String(envLogin) && String(password) === String(envPass);
+  return String(login || '').trim() === envLogin && String(password || '').trim() === envPass;
+}
+
+function verifyTelegramInitData(initDataRaw) {
+  const botToken = (process.env.BOT_TOKEN || '').trim();
+  if (!botToken || !initDataRaw) return null;
+
+  try {
+    const params = new URLSearchParams(initDataRaw);
+    const hash = params.get('hash');
+    if (!hash) return null;
+    params.delete('hash');
+
+    const dataCheckString = Array.from(params.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+    if (calculatedHash !== hash) return null;
+    const userStr = params.get('user');
+    return userStr ? JSON.parse(userStr) : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function acquireLock(retries = 25, delayMs = 60) {
   const token = `${Date.now()}_${Math.random()}`;
   for (let i = 0; i < retries; i++) {
-    const locked = await redis.set(LOCK_KEY, token, { nx: true, px: 4000 });
+    const locked = await redis.set(LOCK_KEY, token, { nx: true, px: 4500 });
     if (locked === 'OK') return token;
     await new Promise(r => setTimeout(r, delayMs));
   }
@@ -51,7 +78,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       let events = await redis.get(REDIS_KEY);
-      if (!events || !Array.isArray(events)) {
+      if (events === null || events === undefined || !Array.isArray(events)) {
         events = DEFAULT_EVENTS;
         await redis.set(REDIS_KEY, events);
       }
@@ -68,19 +95,31 @@ export default async function handler(req, res) {
         slot,
         topic,
         user,
+        initData,
         adminLogin,
         adminPassword
-      } = req.body;
+      } = req.body || {};
 
       if (action === 'admin_login') {
         if (!process.env.ADMIN_LOGIN || !process.env.ADMIN_PASSWORD) {
           return res.status(500).json({
-            error: 'В панели Vercel ещё не заданы переменные ADMIN_LOGIN и ADMIN_PASSWORD'
+            error: 'В настройках Vercel ещё не добавлены переменные ADMIN_LOGIN и ADMIN_PASSWORD'
           });
         }
+
+        const ip = (req.headers['x-forwarded-for'] || 'local').split(',')[0].trim();
+        const rateKey = `tg_queue_bf_${ip}`;
+        const attempts = Number((await redis.get(rateKey)) || 0);
+        if (attempts >= 7) {
+          return res.status(429).json({ error: 'Слишком много попыток входа. Подождите 1 минуту.' });
+        }
+
         if (isValidAdmin(adminLogin, adminPassword)) {
+          await redis.del(rateKey);
           return res.status(200).json({ success: true });
         }
+
+        await redis.set(rateKey, attempts + 1, { ex: 60 });
         return res.status(401).json({ error: 'Неверный логин или пароль старосты' });
       }
 
@@ -90,16 +129,20 @@ export default async function handler(req, res) {
       }
 
       try {
-        let events = (await redis.get(REDIS_KEY)) || DEFAULT_EVENTS;
+        let events = await redis.get(REDIS_KEY);
+        if (!Array.isArray(events)) events = DEFAULT_EVENTS;
 
-        // Действия для старосты
         if (['create_event', 'delete_event', 'admin_remove_booking'].includes(action)) {
           if (!isValidAdmin(adminLogin, adminPassword)) {
-            return res.status(403).json({ error: 'Доступ запрещен: требуется вход для старосты' });
+            return res.status(403).json({ error: 'Доступ запрещен: войдите как староста' });
           }
 
           if (action === 'create_event') {
-            const cleanTitle = String(title || '').trim();
+            if (events.length >= 25) {
+              return res.status(400).json({ error: 'Достигнут лимит активных очередей (25). Удалите старые.' });
+            }
+
+            const cleanTitle = String(title || '').trim().slice(0, 120);
             const slotsCount = Math.min(Math.max(Number(totalSlots) || 10, 1), 100);
 
             if (!cleanTitle) {
@@ -107,7 +150,7 @@ export default async function handler(req, res) {
             }
 
             let cleanTopics = Array.isArray(topics)
-              ? [...new Set(topics.map(t => String(t).trim()).filter(Boolean))]
+              ? [...new Set(topics.map(t => String(t).trim().slice(0, 240)).filter(Boolean))].slice(0, 150)
               : [];
 
             if (cleanTopics.length === 0) {
@@ -146,8 +189,11 @@ export default async function handler(req, res) {
           }
         }
 
-        if (!user || !user.id) {
-          return res.status(400).json({ error: 'Не удалось определить пользователя Telegram' });
+        const verifiedUser = verifyTelegramInitData(initData);
+        const effectiveUser = verifiedUser || user;
+
+        if (!effectiveUser || !effectiveUser.id) {
+          return res.status(400).json({ error: 'Не удалось определить профиль Telegram. Откройте приложение через бота.' });
         }
 
         const eventIndex = events.findIndex(e => e.id === eventId);
@@ -159,7 +205,7 @@ export default async function handler(req, res) {
         let bookings = currentEvent.bookings || [];
 
         if (action === 'cancel') {
-          currentEvent.bookings = bookings.filter(b => String(b.userId) !== String(user.id));
+          currentEvent.bookings = bookings.filter(b => String(b.userId) !== String(effectiveUser.id));
           events[eventIndex] = currentEvent;
           await redis.set(REDIS_KEY, events);
           return res.status(200).json({ success: true, events });
@@ -168,14 +214,14 @@ export default async function handler(req, res) {
         if (action === 'book') {
           const slotNum = Number(slot);
 
-          if (!slotNum || slotNum < 1 || slotNum > currentEvent.totalSlots) {
+          if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > currentEvent.totalSlots) {
             return res.status(400).json({ error: 'Некорректный номер места', events });
           }
           if (!currentEvent.topics.includes(topic)) {
             return res.status(400).json({ error: 'Выбрана несуществующая тема', events });
           }
 
-          if (bookings.some(b => String(b.userId) === String(user.id))) {
+          if (bookings.some(b => String(b.userId) === String(effectiveUser.id))) {
             return res.status(409).json({ error: 'Вы уже записаны в эту очередь!', events });
           }
           if (bookings.some(b => Number(b.slot) === slotNum)) {
@@ -185,22 +231,38 @@ export default async function handler(req, res) {
             });
           }
 
-          const takenTopicsSet = new Set(bookings.map(b => b.topic));
-          const untakenTopics = currentEvent.topics.filter(t => !takenTopicsSet.has(t));
+          const topicCounts = {};
+          currentEvent.topics.forEach(t => { topicCounts[t] = 0; });
+          bookings.forEach(b => {
+            if (topicCounts[b.topic] !== undefined) topicCounts[b.topic]++;
+          });
 
-          if (untakenTopics.length > 0 && takenTopicsSet.has(topic)) {
+          const minUsage = Math.min(...Object.values(topicCounts));
+          const allowedTopics = currentEvent.topics.filter(t => topicCounts[t] === minUsage);
+
+          if (!allowedTopics.includes(topic)) {
             return res.status(409).json({
-              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую из свободных.',
+              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую из доступных.',
               events
             });
           }
 
+          const safeName = [effectiveUser.first_name, effectiveUser.last_name]
+            .filter(Boolean)
+            .join(' ')
+            .trim()
+            .slice(0, 80) || 'Участник';
+
+          const safeUsername = effectiveUser.username
+            ? `@${String(effectiveUser.username).replace(/^@/, '').slice(0, 50)}`
+            : '';
+
           bookings.push({
             slot: slotNum,
             topic,
-            userId: user.id,
-            userName: [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Участник',
-            username: user.username ? `@${user.username}` : '',
+            userId: String(effectiveUser.id),
+            userName: safeName,
+            username: safeUsername,
             updatedAt: new Date().toISOString()
           });
 
