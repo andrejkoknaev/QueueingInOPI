@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Запись на выступления</title>
+  <title>Очередь ОПИ</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -16,7 +16,6 @@
       --accent-glow: rgba(99, 102, 241, 0.25);
       --success: #10b981;
       --danger: #ef4444;
-      --warning: #f59e0b;
     }
 
     * {
@@ -65,9 +64,7 @@
       -webkit-user-select: none;
     }
     .tabs-bar::-webkit-scrollbar { display: none; }
-    .tabs-bar.dragging {
-      cursor: grabbing;
-    }
+    .tabs-bar.dragging { cursor: grabbing; }
 
     .tab-btn {
       display: inline-flex;
@@ -84,11 +81,8 @@
       white-space: nowrap;
       transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       flex-shrink: 0;
-      user-select: none;
     }
-    .tabs-bar.dragging .tab-btn {
-      cursor: grabbing;
-    }
+    .tabs-bar.dragging .tab-btn { cursor: grabbing; }
     .tab-btn.active {
       background: linear-gradient(135deg, #6366f1, #4f46e5);
       color: #ffffff;
@@ -184,6 +178,8 @@
       color: var(--text);
       border: none;
       outline: none;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     input, textarea {
@@ -212,7 +208,7 @@
     textarea {
       resize: vertical;
       min-height: 110px;
-      line-height: 1.4;
+      line-height: 1.45;
     }
 
     button.primary {
@@ -364,8 +360,8 @@
 
     .repeat-badge {
       display: inline-block;
-      margin-top: 4px;
-      padding: 2px 7px;
+      margin-left: 4px;
+      padding: 2px 6px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 600;
@@ -440,7 +436,6 @@
 <body>
 
   <div class="app-container">
-    <!-- Верхняя панель -->
     <div class="top-bar">
       <div class="tabs-bar" id="eventsTabs"></div>
       <button id="adminToggleBtn" class="admin-btn" onclick="handleAdminButtonClick()">
@@ -453,7 +448,7 @@
     <div id="emptyStateCard" class="card" style="display: none; text-align: center; padding: 32px 18px;">
       <div style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Нет активных очередей</div>
       <div style="font-size: 13px; color: var(--muted);">
-        Староста может создать новую запись на выступление через кнопку «+ Добавить запись» сверху.
+        Староста может создать новую запись через кнопку «+ Добавить запись».
       </div>
     </div>
 
@@ -554,13 +549,21 @@
       </div>
 
       <label for="newEventTitle">Название (Трек)(Предмет)(Дата):</label>
-      <input id="newEventTitle" type="text" placeholder="Например: ИБ Пихология 10.10" />
+      <input
+        id="newEventTitle"
+        type="text"
+        placeholder="Например: ИБ Психология 10.10"
+        autocomplete="off"
+      />
 
       <label for="newEventSlots">Количество мест в очереди:</label>
-      <input id="newEventSlots" type="number" min="1" max="100" value="15" />
+      <input id="newEventSlots" type="number" min="1" max="100" value="17" />
 
       <label for="newEventTopics">Список тем (каждая тема с новой строки):</label>
-      <textarea id="newEventTopics" placeholder="Тема 1.;Тема 2.;Если оставить пустым, темы пронумеруются автоматически"></textarea>
+      <textarea
+        id="newEventTopics"
+        placeholder="Тема 1.;&#10;Тема 2.;&#10;Если оставить пустым, темы пронумеруются автоматически"
+      ></textarea>
 
       <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
     </div>
@@ -584,13 +587,11 @@
       try {
         tg.setHeaderColor('#0b0e14');
         tg.setBackgroundColor('#0b0e14');
-      } catch (_) {}
+      } catch {}
     }
 
     function resolveCurrentUser() {
-      if (tg?.initDataUnsafe?.user) {
-        return tg.initDataUnsafe.user;
-      }
+      if (tg?.initDataUnsafe?.user) return tg.initDataUnsafe.user;
       let saved = JSON.parse(localStorage.getItem('tg_queue_browser_user') || 'null');
       if (!saved) {
         saved = {
@@ -607,6 +608,23 @@
     const currentUser = resolveCurrentUser();
     const rawInitData = tg?.initData || '';
 
+    function registerUserForNotifications() {
+      if (!tg?.initDataUnsafe?.user) return;
+      try {
+        if (typeof tg.requestWriteAccess === 'function') tg.requestWriteAccess();
+      } catch {}
+
+      fetch('/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register_user',
+          user: currentUser,
+          initData: rawInitData
+        })
+      }).catch(() => {});
+    }
+
     let allEvents = [];
     let selectedEventId = null;
     let adminCreds = JSON.parse(localStorage.getItem('tg_queue_admin_creds') || 'null');
@@ -614,7 +632,6 @@
     let lastTabsSignature = '';
     let isPolling = false;
     let isMutating = false;
-
     let isDraggingTabs = false;
     let tabsDragMoved = false;
 
@@ -647,7 +664,6 @@
         if (Math.abs(walk) > 5) {
           tabsDragMoved = true;
           slider.classList.add('dragging');
-          e.preventDefault();
           slider.scrollLeft = startScrollLeft - walk;
         }
       });
@@ -667,13 +683,13 @@
         document.getElementById('confirmModalText').textContent = message;
         modal.classList.add('open');
 
-        const cleanup = (result) => {
+        const finish = (res) => {
           modal.classList.remove('open');
-          resolve(result);
+          resolve(res);
         };
 
-        document.getElementById('confirmOkBtn').onclick = () => cleanup(true);
-        document.getElementById('confirmCancelBtn').onclick = () => cleanup(false);
+        document.getElementById('confirmOkBtn').onclick = () => finish(true);
+        document.getElementById('confirmCancelBtn').onclick = () => finish(false);
       });
     }
 
@@ -698,8 +714,7 @@
 
     async function handleAdminButtonClick() {
       if (adminCreds) {
-        const ok = await askConfirm('Выйти из режима старосты?');
-        if (ok) {
+        if (await askConfirm('Выйти из режима старосты?')) {
           adminCreds = null;
           localStorage.removeItem('tg_queue_admin_creds');
           lastOptionsSignature = '';
@@ -802,7 +817,7 @@
 
       document.getElementById('currentEventTitle').textContent = currentEvent.title;
       document.getElementById('currentEventMeta').textContent = isRepeatMode
-        ? `Занято мест: ${takenCount} из ${totalSlots} • Уникальные темы разобраны (доступен повтор тем)`
+        ? `Занято мест: ${takenCount} из ${totalSlots} • Идет повторный круг выбора тем`
         : `Занято мест: ${takenCount} из ${totalSlots} • Свободных уникальных тем: ${selectableTopics.length}`;
 
       const isAdmin = Boolean(adminCreds);
@@ -880,6 +895,16 @@
         }
       }
 
+      const firstSlotByTopic = {};
+      const chronological = [...bookings].sort(
+        (a, b) => new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0)
+      );
+      chronological.forEach(b => {
+        if (firstSlotByTopic[b.topic] === undefined) {
+          firstSlotByTopic[b.topic] = Number(b.slot);
+        }
+      });
+
       const tbody = document.getElementById('queueTableBody');
       tbody.innerHTML = '';
 
@@ -892,7 +917,7 @@
 
         if (entry) {
           const isMe = String(entry.userId) === String(currentUser.id);
-          const isRepeatedTopic = (topicCounts[entry.topic] || 0) > 1;
+          const isRepeat = firstSlotByTopic[entry.topic] !== Number(entry.slot);
           tr.className = 'row-taken' + (isMe ? ' row-mine' : '');
           tr.innerHTML = `
             <td><span class="slot-badge">${i}</span></td>
@@ -901,8 +926,7 @@
               ${entry.username ? `<span class="username">${escapeHtml(entry.username)}</span>` : ''}
             </td>
             <td>
-              <div>${escapeHtml(entry.topic)}</div>
-              ${isRepeatedTopic ? `<span class="repeat-badge">Повторяется</span>` : ''}
+              <span>${escapeHtml(entry.topic)}</span>${isRepeat ? `<span class="repeat-badge">(повторяется)</span>` : ''}
             </td>
             ${isAdmin ? `<td><button class="kick-btn" title="Освободить место" onclick="adminRemoveSlot(${i})">✕</button></td>` : ''}
           `;
@@ -971,9 +995,9 @@
     async function createNewEvent() {
       if (!adminCreds) return;
       const title = document.getElementById('newEventTitle').value.trim();
-      const totalSlots = Number(document.getElementById('newEventSlots').value) || 15;
+      const totalSlots = Number(document.getElementById('newEventSlots').value) || 17;
       const rawTopics = document.getElementById('newEventTopics').value;
-      const topics = rawTopics.split('\n').map(s => s.trim()).filter(Boolean);
+      const topics = rawTopics.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
       if (!title) {
         showStatus('Укажите название выступления', true);
@@ -1019,8 +1043,7 @@
 
     async function deleteCurrentEvent() {
       if (!selectedEventId || !adminCreds) return;
-      const ok = await askConfirm('Удалить эту запись на выступление вместе со всей очередью?');
-      if (!ok) return;
+      if (!(await askConfirm('Удалить эту запись на выступление вместе со всей очередью?'))) return;
 
       isMutating = true;
       try {
@@ -1052,8 +1075,7 @@
 
     async function adminRemoveSlot(slotNum) {
       if (!adminCreds) return;
-      const ok = await askConfirm(`Освободить место ${slotNum} в этой очереди?`);
-      if (!ok) return;
+      if (!(await askConfirm(`Освободить место ${slotNum} в этой очереди?`))) return;
 
       isMutating = true;
       try {
@@ -1162,17 +1184,12 @@
 
     initTabsDesktopScroll();
     updateAdminButtonUI();
+    registerUserForNotifications();
     loadEvents(false);
 
     setInterval(() => {
-      if (document.hidden) return;
-      const isAlreadyBooked = lastOptionsSignature === 'BOOKED';
-      const now = Date.now();
-      if (!isAlreadyBooked || !window._lastSlowPoll || now - window._lastSlowPoll >= 3000) {
-        window._lastSlowPoll = now;
-        loadEvents(true);
-      }
-    }, 1000);
+      if (!document.hidden) loadEvents(true);
+    }, 1500);
   </script>
 </body>
 </html>
