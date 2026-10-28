@@ -28,7 +28,7 @@
     body {
       margin: 0;
       padding: clamp(10px, 3vw, 20px);
-      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
       background-color: var(--bg);
       background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12), transparent 60%);
       color: var(--text);
@@ -37,7 +37,6 @@
       overflow-x: hidden;
     }
 
-    /* Центрированный адаптивный контейнер для телефонов и ПК */
     .app-container {
       width: 100%;
       max-width: 660px;
@@ -98,7 +97,6 @@
       color: #a5b4fc;
     }
 
-    /* Кнопка старосты сверху справа (без короны) */
     .admin-btn {
       padding: 10px 12px;
       border-radius: 12px;
@@ -169,10 +167,11 @@
       font-weight: 500;
     }
 
+    /* 16px предотвращает авто-зум экрана в Telegram на iOS */
     input, select, textarea {
       width: 100%;
       border-radius: 14px;
-      font-size: 15px;
+      font-size: 16px;
       margin-bottom: 16px;
       background-color: var(--input-bg);
       color: var(--text);
@@ -184,9 +183,8 @@
       padding: 14px 16px;
     }
 
-    /* Удлиненные выпадающие списки с отодвинутой от правого края галочкой */
     select {
-      min-height: 52px;
+      min-height: 54px;
       padding: 14px 48px 14px 16px;
       appearance: none;
       -webkit-appearance: none;
@@ -254,7 +252,6 @@
       background: rgba(239, 68, 68, 0.14);
     }
 
-    /* Уведомления */
     .status-msg {
       font-size: 13px;
       margin-bottom: 14px;
@@ -289,7 +286,7 @@
       margin-bottom: 6px;
     }
 
-    /* Адаптивная таблица очереди, которая не ломается на телефонах */
+    /* Адаптивная таблица очереди */
     .table-wrap {
       width: 100%;
       overflow-x: hidden;
@@ -359,7 +356,6 @@
       margin-top: 2px;
     }
 
-    /* Метка для повторяющихся тем */
     .repeat-badge {
       display: inline-block;
       margin-top: 4px;
@@ -387,7 +383,6 @@
       padding: 0;
     }
 
-    /* Модальные окна */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -406,7 +401,7 @@
       border-radius: 20px;
       padding: clamp(16px, 4vw, 22px);
       width: 100%;
-      max-width: 440px;
+      max-width: 420px;
       max-height: 90vh;
       max-height: 90dvh;
       overflow-y: auto;
@@ -423,12 +418,23 @@
       box-shadow: 0 0 8px #10b981;
       flex-shrink: 0;
     }
+
+    .confirm-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .confirm-actions button {
+      flex: 1;
+      min-height: 44px;
+      margin: 0;
+    }
   </style>
 </head>
 <body>
 
   <div class="app-container">
-    <!-- Верхняя панель: вкладки слева + кнопка Старосты справа -->
+    <!-- Верхняя панель -->
     <div class="top-bar">
       <div class="tabs-bar" id="eventsTabs"></div>
       <button id="adminToggleBtn" class="admin-btn" onclick="handleAdminButtonClick()">
@@ -437,6 +443,14 @@
     </div>
 
     <div id="statusBox" class="status-msg"></div>
+
+    <!-- Заглушка, если все очереди удалены -->
+    <div id="emptyStateCard" class="card" style="display: none; text-align: center; padding: 32px 18px;">
+      <div style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">Нет активных очередей</div>
+      <div style="font-size: 13px; color: var(--muted);">
+        Староста может создать новую запись на выступление через кнопку «+ Добавить запись» сверху.
+      </div>
+    </div>
 
     <!-- Основной контент выбранного выступления -->
     <div id="eventContent">
@@ -483,7 +497,7 @@
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px;">
           <h3 style="margin: 0; font-size: 16px; display: flex; align-items: center;">
-            <span class="live-dot" title="Обновляется в реальном времени"></span>
+            <span class="live-dot"></span>
             Таблица очереди
           </h3>
           <span style="font-size: 11px; color: var(--muted);">Live</span>
@@ -532,7 +546,7 @@
     </div>
   </div>
 
-  <!-- Модальное окно создания новой записи (доступно только старосте) -->
+  <!-- Модальное окно создания новой записи -->
   <div id="createModal" class="modal-backdrop">
     <div class="modal-card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -553,22 +567,70 @@
     </div>
   </div>
 
-  <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
+  <!-- Кастомное окно подтверждения (работает во всех Telegram WebView на iOS, Android и ПК) -->
+  <div id="confirmModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div id="confirmModalText" style="font-size: 15px; font-weight: 600; line-height: 1.45;"></div>
+      <div class="confirm-actions">
+        <button class="icon-btn" id="confirmCancelBtn" style="font-size: 14px;">Отмена</button>
+        <button class="danger" id="confirmOkBtn" style="font-size: 14px;">Подтвердить</button>
+      </div>
+    </div>
+  </div>
 
-    const currentUser = tg.initDataUnsafe?.user || {
-      id: 'local_test_user',
-      first_name: 'Тестовый',
-      last_name: 'Пользователь',
-      username: 'test_user'
-    };
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      try {
+        tg.setHeaderColor('#0b0e14');
+        tg.setBackgroundColor('#0b0e14');
+      } catch (_) {}
+    }
+
+    function resolveCurrentUser() {
+      if (tg?.initDataUnsafe?.user) {
+        return tg.initDataUnsafe.user;
+      }
+      let saved = JSON.parse(localStorage.getItem('tg_queue_browser_user') || 'null');
+      if (!saved) {
+        saved = {
+          id: 'web_' + Math.random().toString(36).slice(2, 10),
+          first_name: 'Гость',
+          last_name: '(Браузер)',
+          username: ''
+        };
+        localStorage.setItem('tg_queue_browser_user', JSON.stringify(saved));
+      }
+      return saved;
+    }
+
+    const currentUser = resolveCurrentUser();
+    const rawInitData = tg?.initData || '';
 
     let allEvents = [];
     let selectedEventId = null;
     let adminCreds = JSON.parse(localStorage.getItem('tg_queue_admin_creds') || 'null');
     let lastOptionsSignature = '';
+    let isPolling = false;
+    let isMutating = false;
+
+    function askConfirm(message) {
+      return new Promise(resolve => {
+        const modal = document.getElementById('confirmModal');
+        document.getElementById('confirmModalText').textContent = message;
+        modal.classList.add('open');
+
+        const cleanup = (result) => {
+          modal.classList.remove('open');
+          resolve(result);
+        };
+
+        document.getElementById('confirmOkBtn').onclick = () => cleanup(true);
+        document.getElementById('confirmCancelBtn').onclick = () => cleanup(false);
+      });
+    }
 
     function showStatus(text, isError = false) {
       const box = document.getElementById('statusBox');
@@ -589,9 +651,10 @@
       }
     }
 
-    function handleAdminButtonClick() {
+    async function handleAdminButtonClick() {
       if (adminCreds) {
-        if (confirm('Выйти из режима старосты?')) {
+        const ok = await askConfirm('Выйти из режима старосты?');
+        if (ok) {
           adminCreds = null;
           localStorage.removeItem('tg_queue_admin_creds');
           lastOptionsSignature = '';
@@ -610,7 +673,7 @@
 
     async function submitAdminLogin() {
       const adminLogin = document.getElementById('adminLoginInput').value.trim();
-      const adminPassword = document.getElementById('adminPassInput').value;
+      const adminPassword = document.getElementById('adminPassInput').value.trim();
       const btn = document.getElementById('loginSubmitBtn');
       btn.disabled = true;
 
@@ -639,19 +702,26 @@
     }
 
     async function loadEvents(isBackgroundPoll = false) {
+      if (isPolling || (isBackgroundPoll && isMutating)) return;
+      isPolling = true;
+
       try {
         const res = await fetch('/api/queue?t=' + Date.now());
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
 
-        allEvents = data.events || [];
-        if (allEvents.length > 0 && !allEvents.some(e => e.id === selectedEventId)) {
-          selectedEventId = allEvents[0].id;
-          lastOptionsSignature = '';
+        if (!isMutating) {
+          allEvents = data.events || [];
+          if (allEvents.length > 0 && !allEvents.some(e => e.id === selectedEventId)) {
+            selectedEventId = allEvents[0].id;
+            lastOptionsSignature = '';
+          }
+          renderUI(isBackgroundPoll);
         }
-        renderUI(isBackgroundPoll);
       } catch (e) {
         if (!isBackgroundPoll) showStatus(e.message, true);
+      } finally {
+        isPolling = false;
       }
     }
 
@@ -659,25 +729,34 @@
       renderTabs();
       const currentEvent = allEvents.find(e => e.id === selectedEventId);
       const contentEl = document.getElementById('eventContent');
+      const emptyEl = document.getElementById('emptyStateCard');
 
       if (!currentEvent) {
         contentEl.style.display = 'none';
+        emptyEl.style.display = 'block';
         return;
       }
+      emptyEl.style.display = 'none';
       contentEl.style.display = 'block';
 
       const bookings = currentEvent.bookings || [];
       const takenCount = bookings.length;
       const totalSlots = currentEvent.totalSlots;
 
-      const takenTopicsSet = new Set(bookings.map(b => b.topic));
-      const uniqueFreeTopics = currentEvent.topics.filter(t => !takenTopicsSet.has(t));
-      const isRepeatMode = uniqueFreeTopics.length === 0 && currentEvent.topics.length > 0;
+      const topicCounts = {};
+      currentEvent.topics.forEach(t => { topicCounts[t] = 0; });
+      bookings.forEach(b => {
+        if (topicCounts[b.topic] !== undefined) topicCounts[b.topic]++;
+      });
+
+      const minUsage = currentEvent.topics.length > 0 ? Math.min(...Object.values(topicCounts)) : 0;
+      const selectableTopics = currentEvent.topics.filter(t => topicCounts[t] === minUsage);
+      const isRepeatMode = minUsage > 0;
 
       document.getElementById('currentEventTitle').textContent = currentEvent.title;
       document.getElementById('currentEventMeta').textContent = isRepeatMode
         ? `Занято мест: ${takenCount} из ${totalSlots} • Уникальные темы разобраны (доступен повтор тем)`
-        : `Занято мест: ${takenCount} из ${totalSlots} • Свободных уникальных тем: ${uniqueFreeTopics.length}`;
+        : `Занято мест: ${takenCount} из ${totalSlots} • Свободных уникальных тем: ${selectableTopics.length}`;
 
       const isAdmin = Boolean(adminCreds);
       document.getElementById('deleteEventBtn').style.display = isAdmin ? 'inline-block' : 'none';
@@ -707,12 +786,11 @@
           if (!takenSlots.has(i)) freeSlots.push(i);
         }
 
-        const selectableTopics = isRepeatMode ? currentEvent.topics : uniqueFreeTopics;
         document.getElementById('topicSelectLabel').textContent = isRepeatMode
-          ? 'Все темы разобраны — выберите любую тему (повтор):'
+          ? 'Уникальные темы закончились — выберите тему (повтор):'
           : 'Свободная тема:';
 
-        const newSignature = `${currentEvent.id}|${isRepeatMode ? 'R' : 'U'}|${freeSlots.join(',')}|${selectableTopics.join('||')}`;
+        const newSignature = `${currentEvent.id}|${minUsage}|${freeSlots.join(',')}|${selectableTopics.join('||')}`;
         if (newSignature !== lastOptionsSignature) {
           const slotSelect = document.getElementById('slotSelect');
           const topicSelect = document.getElementById('topicSelect');
@@ -754,11 +832,6 @@
           lastOptionsSignature = newSignature;
         }
       }
-
-      const topicCounts = {};
-      bookings.forEach(b => {
-        topicCounts[b.topic] = (topicCounts[b.topic] || 0) + 1;
-      });
 
       const tbody = document.getElementById('queueTableBody');
       tbody.innerHTML = '';
@@ -849,6 +922,7 @@
 
       const btn = document.getElementById('createEventBtn');
       btn.disabled = true;
+      isMutating = true;
 
       try {
         const res = await fetch('/api/queue', {
@@ -877,14 +951,17 @@
       } catch (e) {
         showStatus(e.message, true);
       } finally {
+        isMutating = false;
         btn.disabled = false;
       }
     }
 
     async function deleteCurrentEvent() {
       if (!selectedEventId || !adminCreds) return;
-      if (!confirm('Удалить эту запись на выступление вместе со всей очередью?')) return;
+      const ok = await askConfirm('Удалить эту запись на выступление вместе со всей очередью?');
+      if (!ok) return;
 
+      isMutating = true;
       try {
         const res = await fetch('/api/queue', {
           method: 'POST',
@@ -906,13 +983,17 @@
         showStatus('Очередь удалена');
       } catch (e) {
         showStatus(e.message, true);
+      } finally {
+        isMutating = false;
       }
     }
 
     async function adminRemoveSlot(slotNum) {
       if (!adminCreds) return;
-      if (!confirm(`Освободить место ${slotNum} в этой очереди?`)) return;
+      const ok = await askConfirm(`Освободить место ${slotNum} в этой очереди?`);
+      if (!ok) return;
 
+      isMutating = true;
       try {
         const res = await fetch('/api/queue', {
           method: 'POST',
@@ -934,6 +1015,8 @@
         showStatus(`Место ${slotNum} освобождено старостой`);
       } catch (e) {
         showStatus(e.message, true);
+      } finally {
+        isMutating = false;
       }
     }
 
@@ -942,6 +1025,7 @@
       const topic = document.getElementById('topicSelect').value;
       const btn = document.getElementById('bookBtn');
       btn.disabled = true;
+      isMutating = true;
 
       try {
         const res = await fetch('/api/queue', {
@@ -952,7 +1036,8 @@
             eventId: selectedEventId,
             slot,
             topic,
-            user: currentUser
+            user: currentUser,
+            initData: rawInitData
           })
         });
         const data = await res.json();
@@ -968,6 +1053,7 @@
       } catch (e) {
         showStatus(e.message, true);
       } finally {
+        isMutating = false;
         btn.disabled = false;
       }
     }
@@ -975,6 +1061,7 @@
     async function cancelSlot() {
       const btn = document.getElementById('cancelBtn');
       btn.disabled = true;
+      isMutating = true;
 
       try {
         const res = await fetch('/api/queue', {
@@ -983,7 +1070,8 @@
           body: JSON.stringify({
             action: 'cancel',
             eventId: selectedEventId,
-            user: currentUser
+            user: currentUser,
+            initData: rawInitData
           })
         });
         const data = await res.json();
@@ -996,6 +1084,7 @@
       } catch (e) {
         showStatus(e.message, true);
       } finally {
+        isMutating = false;
         btn.disabled = false;
       }
     }
