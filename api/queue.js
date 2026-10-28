@@ -7,14 +7,15 @@ const redis = new Redis({
 });
 
 const REDIS_KEY = 'tg_queue_events_v2';
+const SUBSCRIBERS_KEY = 'tg_queue_subscribers_v1';
 const LOCK_KEY = 'tg_queue_mutex_lock';
 
 const DEFAULT_EVENTS = [
   {
     id: 'evt_default_1',
     title: 'Семинар 1. Доклады',
-    totalSlots: 10,
-    topics: Array.from({ length: 10 }, (_, i) => `Тема №${i + 1}`),
+    totalSlots: 17,
+    topics: Array.from({ length: 17 }, (_, i) => String(i + 1)),
     createdAt: new Date().toISOString(),
     bookings: []
   }
@@ -48,9 +49,63 @@ function verifyTelegramInitData(initDataRaw) {
     if (calculatedHash !== hash) return null;
     const userStr = params.get('user');
     return userStr ? JSON.parse(userStr) : null;
-  } catch (_) {
+  } catch {
     return null;
   }
+}
+
+async function saveSubscriber(userId) {
+  const idStr = String(userId || '').trim();
+  if (!/^\d+$/.test(idStr)) return;
+  try {
+    await redis.sadd(SUBSCRIBERS_KEY, idStr);
+  } catch {}
+}
+
+async function broadcastNewEvent(eventTitle, slotsCount) {
+  const botToken = (process.env.BOT_TOKEN || '').trim();
+  if (!botToken) return;
+
+  try {
+    const updatesRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=100`);
+    if (updatesRes.ok) {
+      const updatesData = await updatesRes.json();
+      if (Array.isArray(updatesData.result)) {
+        for (const upd of updatesData.result) {
+          const chatId = upd?.message?.chat?.id || upd?.my_chat_member?.chat?.id;
+          if (chatId && Number(chatId) > 0) {
+            await saveSubscriber(chatId);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const subscribers = (await redis.smembers(SUBSCRIBERS_KEY)) || [];
+    if (!subscribers.length) return;
+
+    const safeTitle = eventTitle.replace(/[<>&]/g, '');
+    const text =
+      `🔔 <b>Создана новая запись на выступление!</b>\n\n` +
+      `📌 <b>${safeTitle}</b>\n` +
+      `👥 Мест в очереди: <b>${slotsCount}</b>\n\n` +
+      `Откройте мини-приложение в боте, чтобы выбрать место и тему.`;
+
+    await Promise.allSettled(
+      subscribers.map(chatId =>
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML'
+          })
+        })
+      )
+    );
+  } catch {}
 }
 
 async function acquireLock(retries = 25, delayMs = 60) {
@@ -65,11 +120,10 @@ async function acquireLock(retries = 25, delayMs = 60) {
 
 async function releaseLock(token) {
   try {
-    const current = await redis.get(LOCK_KEY);
-    if (current === token) {
+    if ((await redis.get(LOCK_KEY)) === token) {
       await redis.del(LOCK_KEY);
     }
-  } catch (_) {}
+  } catch {}
 }
 
 export default async function handler(req, res) {
@@ -78,7 +132,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       let events = await redis.get(REDIS_KEY);
-      if (events === null || events === undefined || !Array.isArray(events)) {
+      if (!Array.isArray(events)) {
         events = DEFAULT_EVENTS;
         await redis.set(REDIS_KEY, events);
       }
@@ -100,10 +154,17 @@ export default async function handler(req, res) {
         adminPassword
       } = req.body || {};
 
+      if (action === 'register_user') {
+        const verifiedUser = verifyTelegramInitData(initData);
+        const targetUser = verifiedUser || user;
+        if (targetUser?.id) await saveSubscriber(targetUser.id);
+        return res.status(200).json({ success: true });
+      }
+
       if (action === 'admin_login') {
         if (!process.env.ADMIN_LOGIN || !process.env.ADMIN_PASSWORD) {
           return res.status(500).json({
-            error: 'В настройках Vercel ещё не добавлены переменные ADMIN_LOGIN и ADMIN_PASSWORD'
+            error: 'В настройках Vercel не заданы ADMIN_LOGIN и ADMIN_PASSWORD'
           });
         }
 
@@ -111,7 +172,7 @@ export default async function handler(req, res) {
         const rateKey = `tg_queue_bf_${ip}`;
         const attempts = Number((await redis.get(rateKey)) || 0);
         if (attempts >= 7) {
-          return res.status(429).json({ error: 'Слишком много попыток входа. Подождите 1 минуту.' });
+          return res.status(429).json({ error: 'Слишком много попыток. Подождите 1 минуту.' });
         }
 
         if (isValidAdmin(adminLogin, adminPassword)) {
@@ -125,7 +186,7 @@ export default async function handler(req, res) {
 
       const lockToken = await acquireLock();
       if (!lockToken) {
-        return res.status(503).json({ error: 'Сервер обрабатывает другой запрос, повторите через секунду' });
+        return res.status(503).json({ error: 'Сервер занят, повторите через секунду' });
       }
 
       try {
@@ -139,11 +200,11 @@ export default async function handler(req, res) {
 
           if (action === 'create_event') {
             if (events.length >= 25) {
-              return res.status(400).json({ error: 'Достигнут лимит активных очередей (25). Удалите старые.' });
+              return res.status(400).json({ error: 'Достигнут лимит очередей (25). Удалите старые.' });
             }
 
             const cleanTitle = String(title || '').trim().slice(0, 120);
-            const slotsCount = Math.min(Math.max(Number(totalSlots) || 10, 1), 100);
+            const slotsCount = Math.min(Math.max(Number(totalSlots) || 17, 1), 100);
 
             if (!cleanTitle) {
               return res.status(400).json({ error: 'Введите название выступления' });
@@ -154,7 +215,7 @@ export default async function handler(req, res) {
               : [];
 
             if (cleanTopics.length === 0) {
-              cleanTopics = Array.from({ length: slotsCount }, (_, i) => `Тема №${i + 1}`);
+              cleanTopics = Array.from({ length: slotsCount }, (_, i) => String(i + 1));
             }
 
             const newEvent = {
@@ -168,6 +229,8 @@ export default async function handler(req, res) {
 
             events.push(newEvent);
             await redis.set(REDIS_KEY, events);
+            await broadcastNewEvent(cleanTitle, slotsCount);
+
             return res.status(200).json({ success: true, events, newEventId: newEvent.id });
           }
 
@@ -193,12 +256,14 @@ export default async function handler(req, res) {
         const effectiveUser = verifiedUser || user;
 
         if (!effectiveUser || !effectiveUser.id) {
-          return res.status(400).json({ error: 'Не удалось определить профиль Telegram. Откройте приложение через бота.' });
+          return res.status(400).json({ error: 'Не удалось определить профиль Telegram' });
         }
+
+        await saveSubscriber(effectiveUser.id);
 
         const eventIndex = events.findIndex(e => e.id === eventId);
         if (eventIndex === -1) {
-          return res.status(404).json({ error: 'Выбранное выступление не найдено', events });
+          return res.status(404).json({ error: 'Выступление не найдено', events });
         }
 
         const currentEvent = events[eventIndex];
@@ -213,20 +278,20 @@ export default async function handler(req, res) {
 
         if (action === 'book') {
           const slotNum = Number(slot);
+          const topicStr = String(topic || '');
 
           if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > currentEvent.totalSlots) {
             return res.status(400).json({ error: 'Некорректный номер места', events });
           }
-          if (!currentEvent.topics.includes(topic)) {
+          if (!currentEvent.topics.includes(topicStr)) {
             return res.status(400).json({ error: 'Выбрана несуществующая тема', events });
           }
-
           if (bookings.some(b => String(b.userId) === String(effectiveUser.id))) {
             return res.status(409).json({ error: 'Вы уже записаны в эту очередь!', events });
           }
           if (bookings.some(b => Number(b.slot) === slotNum)) {
             return res.status(409).json({
-              error: `⚡ Кто-то оказался быстрее на доли секунды и занял место ${slotNum}! Выберите другое.`,
+              error: `⚡ Место ${slotNum} заняли долей секунды раньше! Выберите другое.`,
               events
             });
           }
@@ -240,9 +305,9 @@ export default async function handler(req, res) {
           const minUsage = Math.min(...Object.values(topicCounts));
           const allowedTopics = currentEvent.topics.filter(t => topicCounts[t] === minUsage);
 
-          if (!allowedTopics.includes(topic)) {
+          if (!allowedTopics.includes(topicStr)) {
             return res.status(409).json({
-              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую из доступных.',
+              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую.',
               events
             });
           }
@@ -259,7 +324,7 @@ export default async function handler(req, res) {
 
           bookings.push({
             slot: slotNum,
-            topic,
+            topic: topicStr,
             userId: String(effectiveUser.id),
             userName: safeName,
             username: safeUsername,
