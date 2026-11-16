@@ -149,6 +149,8 @@ export default async function handler(req, res) {
         totalSlots,
         topics,
         noTopics,
+        creatorSlot,
+        creatorTopic,
         slot,
         topic,
         user,
@@ -225,6 +227,45 @@ export default async function handler(req, res) {
               cleanTopics = Array.from({ length: slotsCount }, (_, i) => String(i + 1));
             }
 
+            const initialBookings = [];
+            if (creatorSlot !== undefined && creatorSlot !== null && String(creatorSlot).trim() !== '') {
+              const creatorSlotNum = Number(creatorSlot);
+              if (!Number.isInteger(creatorSlotNum) || creatorSlotNum < 1 || creatorSlotNum > slotsCount) {
+                return res.status(400).json({ error: 'Некорректный номер места' });
+              }
+
+              const creatorUser = verifyTelegramInitData(initData) || user;
+              if (!creatorUser || !creatorUser.id) {
+                return res.status(400).json({ error: 'Не удалось определить профиль Telegram' });
+              }
+
+              const creatorTopicStr = noTopicsMode ? '' : String(creatorTopic || '');
+              if (!noTopicsMode && !cleanTopics.includes(creatorTopicStr)) {
+                return res.status(400).json({ error: 'Выбрана несуществующая тема' });
+              }
+
+              const creatorName = [creatorUser.first_name, creatorUser.last_name]
+                .filter(Boolean)
+                .join(' ')
+                .trim()
+                .slice(0, 80) || 'Участник';
+
+              const creatorUsername = creatorUser.username
+                ? `@${String(creatorUser.username).replace(/^@/, '').slice(0, 50)}`
+                : '';
+
+              initialBookings.push({
+                slot: creatorSlotNum,
+                topic: creatorTopicStr,
+                userId: String(creatorUser.id),
+                userName: creatorName,
+                username: creatorUsername,
+                updatedAt: new Date().toISOString()
+              });
+
+              await saveSubscriber(creatorUser.id);
+            }
+
             const newEvent = {
               id: 'evt_' + Date.now(),
               title: cleanTitle,
@@ -232,7 +273,7 @@ export default async function handler(req, res) {
               topics: cleanTopics,
               noTopics: noTopicsMode,
               createdAt: new Date().toISOString(),
-              bookings: []
+              bookings: initialBookings
             };
 
             events.push(newEvent);
