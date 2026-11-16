@@ -196,7 +196,7 @@ export default async function handler(req, res) {
         let events = await redis.get(REDIS_KEY);
         if (!Array.isArray(events)) events = DEFAULT_EVENTS;
 
-        if (['create_event', 'delete_event', 'admin_remove_booking'].includes(action)) {
+        if (['create_event', 'delete_event', 'admin_remove_booking', 'rename_event'].includes(action)) {
           if (!isValidAdmin(adminLogin, adminPassword)) {
             return res.status(403).json({ error: 'Доступ запрещен: войдите как староста' });
           }
@@ -244,6 +244,20 @@ export default async function handler(req, res) {
 
           if (action === 'delete_event') {
             events = events.filter(e => e.id !== eventId);
+            await redis.set(REDIS_KEY, events);
+            return res.status(200).json({ success: true, events });
+          }
+
+          if (action === 'rename_event') {
+            const idx = events.findIndex(e => e.id === eventId);
+            if (idx === -1) return res.status(404).json({ error: 'Очередь не найдена' });
+
+            const cleanTitle = String(title || '').trim().slice(0, 120);
+            if (!cleanTitle) {
+              return res.status(400).json({ error: 'Введите название выступления' });
+            }
+
+            events[idx].title = cleanTitle;
             await redis.set(REDIS_KEY, events);
             return res.status(200).json({ success: true, events });
           }
