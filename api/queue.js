@@ -62,7 +62,7 @@ async function saveSubscriber(userId) {
   } catch {}
 }
 
-async function broadcastNewEvent(eventTitle, slotsCount) {
+async function broadcastNewEvent(eventTitle, slotsCount, noTopicsMode = false) {
   const botToken = (process.env.BOT_TOKEN || '').trim();
   if (!botToken) return;
 
@@ -90,7 +90,9 @@ async function broadcastNewEvent(eventTitle, slotsCount) {
       `🔔 <b>Создана новая запись на выступление!</b>\n\n` +
       `📌 <b>${safeTitle}</b>\n` +
       `👥 Мест в очереди: <b>${slotsCount}</b>\n\n` +
-      `Откройте мини-приложение в боте, чтобы выбрать место и тему.`;
+      (noTopicsMode
+        ? `Откройте мини-приложение в боте, чтобы выбрать место.`
+        : `Откройте мини-приложение в боте, чтобы выбрать место и тему.`);
 
     await Promise.allSettled(
       subscribers.map(chatId =>
@@ -146,6 +148,7 @@ export default async function handler(req, res) {
         title,
         totalSlots,
         topics,
+        noTopics,
         slot,
         topic,
         user,
@@ -210,11 +213,15 @@ export default async function handler(req, res) {
               return res.status(400).json({ error: 'Введите название выступления' });
             }
 
+            const noTopicsMode = noTopics === true;
+
             let cleanTopics = Array.isArray(topics)
               ? [...new Set(topics.map(t => String(t).trim().slice(0, 240)).filter(Boolean))].slice(0, 150)
               : [];
 
-            if (cleanTopics.length === 0) {
+            if (noTopicsMode) {
+              cleanTopics = [];
+            } else if (cleanTopics.length === 0) {
               cleanTopics = Array.from({ length: slotsCount }, (_, i) => String(i + 1));
             }
 
@@ -223,13 +230,14 @@ export default async function handler(req, res) {
               title: cleanTitle,
               totalSlots: slotsCount,
               topics: cleanTopics,
+              noTopics: noTopicsMode,
               createdAt: new Date().toISOString(),
               bookings: []
             };
 
             events.push(newEvent);
             await redis.set(REDIS_KEY, events);
-            await broadcastNewEvent(cleanTitle, slotsCount);
+            await broadcastNewEvent(cleanTitle, slotsCount, noTopicsMode);
 
             return res.status(200).json({ success: true, events, newEventId: newEvent.id });
           }
@@ -278,12 +286,12 @@ export default async function handler(req, res) {
 
         if (action === 'book') {
           const slotNum = Number(slot);
-          const topicStr = String(topic || '');
+          const topicStr = currentEvent.noTopics ? '' : String(topic || '');
 
           if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > currentEvent.totalSlots) {
             return res.status(400).json({ error: 'Некорректный номер места', events });
           }
-          if (!currentEvent.topics.includes(topicStr)) {
+          if (!currentEvent.noTopics && !currentEvent.topics.includes(topicStr)) {
             return res.status(400).json({ error: 'Выбрана несуществующая тема', events });
           }
           if (bookings.some(b => String(b.userId) === String(effectiveUser.id))) {
@@ -305,7 +313,7 @@ export default async function handler(req, res) {
           const minUsage = Math.min(...Object.values(topicCounts));
           const allowedTopics = currentEvent.topics.filter(t => topicCounts[t] === minUsage);
 
-          if (!allowedTopics.includes(topicStr)) {
+          if (!currentEvent.noTopics && !allowedTopics.includes(topicStr)) {
             return res.status(409).json({
               error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую.',
               events
