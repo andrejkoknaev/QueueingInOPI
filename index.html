@@ -390,18 +390,25 @@
       padding: 0;
     }
 
+    /* Поля в DOM с рождения страницы: без холодного старта IME в Android WebView */
     .modal-backdrop {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.82);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 14px;
+      display: block;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      padding: 20px 14px 45vh;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       z-index: 100;
     }
-    .modal-backdrop.open { display: flex; }
+    .modal-backdrop.open {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+    }
     .modal-card {
       background: var(--card);
       border: none;
@@ -409,8 +416,8 @@
       padding: clamp(16px, 4vw, 22px);
       width: 100%;
       max-width: 420px;
-      margin: auto;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+      margin: 0 auto;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
     }
 
     .live-dot {
@@ -686,10 +693,6 @@
 
     function registerUserForNotifications() {
       if (!tg?.initDataUnsafe?.user) return;
-      try {
-        if (typeof tg.requestWriteAccess === 'function') tg.requestWriteAccess();
-      } catch {}
-
       fetch('/api/queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -699,6 +702,14 @@
           initData: rawInitData
         })
       }).catch(() => {});
+    }
+
+    function requestWriteAccessOnAction() {
+      if (!tg?.initDataUnsafe?.user || window._writeAccessRequested) return;
+      window._writeAccessRequested = true;
+      try {
+        if (typeof tg.requestWriteAccess === 'function') tg.requestWriteAccess();
+      } catch {}
     }
 
     let allEvents = [];
@@ -802,7 +813,9 @@
         }
       } else {
         clearActiveFocus();
-        document.getElementById('adminLoginModal').classList.add('open');
+        const modal = document.getElementById('adminLoginModal');
+        modal.scrollTop = 0;
+        modal.classList.add('open');
       }
     }
 
@@ -1075,7 +1088,9 @@
     function openCreateModal() {
       clearActiveFocus();
       refreshCreatorOptions();
-      document.getElementById('createModal').classList.add('open');
+      const modal = document.getElementById('createModal');
+      modal.scrollTop = 0;
+      modal.classList.add('open');
     }
 
     function closeCreateModal() {
@@ -1154,6 +1169,7 @@
       const creatorSlot = document.getElementById('creatorSlotSelect').value;
       const creatorTopic = noTopics ? '' : document.getElementById('creatorTopicSelect').value;
 
+      requestWriteAccessOnAction();
       const btn = document.getElementById('createEventBtn');
       btn.disabled = true;
       isMutating = true;
@@ -1206,7 +1222,9 @@
       if (!ev) return;
       clearActiveFocus();
       document.getElementById('renameEventInput').value = ev.title;
-      document.getElementById('renameModal').classList.add('open');
+      const modal = document.getElementById('renameModal');
+      modal.scrollTop = 0;
+      modal.classList.add('open');
     }
 
     function closeRenameModal() {
@@ -1323,6 +1341,7 @@
     async function bookSlot() {
       const slot = document.getElementById('slotSelect').value;
       const topic = document.getElementById('topicSelect').value;
+      requestWriteAccessOnAction();
       const btn = document.getElementById('bookBtn');
       btn.disabled = true;
       isMutating = true;
@@ -1399,6 +1418,7 @@
 
     initTabsDesktopScroll();
     updateAdminButtonUI();
+    refreshCreatorOptions();
     registerUserForNotifications();
     loadEvents(false);
 
