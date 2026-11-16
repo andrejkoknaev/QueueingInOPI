@@ -390,7 +390,6 @@
       padding: 0;
     }
 
-    /* Поля в DOM с рождения страницы: без холодного старта IME в Android WebView */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -1221,14 +1220,26 @@
       const ev = allEvents.find(e => e.id === selectedEventId);
       if (!ev) return;
       clearActiveFocus();
-      document.getElementById('renameEventInput').value = ev.title;
+
       const modal = document.getElementById('renameModal');
+      const oldInput = document.getElementById('renameEventInput');
+      const freshInput = oldInput.cloneNode(false);
+      freshInput.value = '';
+      oldInput.replaceWith(freshInput);
+
       modal.scrollTop = 0;
       modal.classList.add('open');
+      void modal.offsetHeight;
+
+      requestAnimationFrame(() => {
+        freshInput.value = ev.title;
+      });
     }
 
     function closeRenameModal() {
       clearActiveFocus();
+      const input = document.getElementById('renameEventInput');
+      if (input) input.value = '';
       document.getElementById('renameModal').classList.remove('open');
     }
 
