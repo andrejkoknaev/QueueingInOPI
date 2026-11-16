@@ -492,6 +492,9 @@
             <h2 class="event-title" id="currentEventTitle">Загрузка...</h2>
             <div class="event-meta" id="currentEventMeta"></div>
           </div>
+          <button id="editTitleBtn" class="icon-btn" style="display: none; align-items: center; justify-content: center;" title="Изменить название" aria-label="Изменить название" onclick="openRenameModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          </button>
           <button id="deleteEventBtn" class="icon-btn delete-event" style="display: none;" onclick="deleteCurrentEvent()">
             Удалить очередь
           </button>
@@ -604,6 +607,20 @@
         </div>
 
       <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
+    </div>
+  </div>
+
+  <div id="renameModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="margin: 0; font-size: 17px;">Изменить название</h3>
+        <button class="icon-btn" onclick="closeRenameModal()">✕</button>
+      </div>
+
+      <label for="renameEventInput">Название (Трек)(Предмет)(Дата):</label>
+      <input id="renameEventInput" type="text" maxlength="120" autocomplete="off" />
+
+      <button class="primary" id="renameEventBtn" onclick="renameCurrentEvent()">Сохранить</button>
     </div>
   </div>
 
@@ -867,6 +884,7 @@
       document.getElementById('topicHeader').style.display = noTopics ? 'none' : '';
       document.getElementById('userCol').style.width = noTopics ? 'auto' : '';
       document.getElementById('deleteEventBtn').style.display = isAdmin ? 'inline-block' : 'none';
+      document.getElementById('editTitleBtn').style.display = isAdmin ? 'inline-flex' : 'none';
       document.getElementById('adminActionHeader').style.display = isAdmin ? 'table-cell' : 'none';
       document.getElementById('adminActionCol').style.display = isAdmin ? 'table-column' : 'none';
 
@@ -1088,6 +1106,60 @@
         closeCreateModal();
         renderUI();
         showStatus('Новая очередь создана!');
+      } catch (e) {
+        showStatus(e.message, true);
+      } finally {
+        isMutating = false;
+        btn.disabled = false;
+      }
+    }
+
+    function openRenameModal() {
+      if (!adminCreds) return;
+      const ev = allEvents.find(e => e.id === selectedEventId);
+      if (!ev) return;
+      document.getElementById('renameEventInput').value = ev.title;
+      document.getElementById('renameModal').classList.add('open');
+    }
+
+    function closeRenameModal() {
+      document.getElementById('renameModal').classList.remove('open');
+    }
+
+    async function renameCurrentEvent() {
+      if (!selectedEventId || !adminCreds) return;
+      const title = document.getElementById('renameEventInput').value.trim();
+
+      if (!title) {
+        showStatus('Укажите название выступления', true);
+        return;
+      }
+
+      const btn = document.getElementById('renameEventBtn');
+      btn.disabled = true;
+      isMutating = true;
+
+      try {
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'rename_event',
+            eventId: selectedEventId,
+            title,
+            adminLogin: adminCreds.login,
+            adminPassword: adminCreds.password
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка изменения названия');
+
+        allEvents = data.events;
+        lastOptionsSignature = '';
+        lastTabsSignature = '';
+        closeRenameModal();
+        renderUI();
+        showStatus('Название изменено');
       } catch (e) {
         showStatus(e.message, true);
       } finally {
