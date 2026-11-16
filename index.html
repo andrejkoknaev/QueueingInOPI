@@ -431,7 +431,40 @@
       min-height: 44px;
       margin: 0;
     }
-  </style>
+  
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .checkbox-row input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      min-width: 24px;
+      margin: 0;
+      padding: 0;
+      border-radius: 8px;
+      background-color: var(--input-bg);
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 15px;
+      cursor: pointer;
+    }
+    .checkbox-row input[type="checkbox"]:checked {
+      background-color: var(--accent);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+    }
+    </style>
 </head>
 <body>
 
@@ -482,8 +515,7 @@
           <div class="my-booking-box">
             <div class="my-booking-title">✓ Вы записаны на это выступление</div>
             <div style="font-size: 13px; line-height: 1.5; word-break: break-word;">
-              Место в очереди: <b id="mySlot"></b><br/>
-              Выбранная тема: <b id="myTopic"></b>
+              Место в очереди: <b id="mySlot"></b><span id="myTopicLine"><br/>Выбранная тема: <b id="myTopic"></b></span>
             </div>
           </div>
           <button class="danger" id="cancelBtn" onclick="cancelSlot()">Отменить мою запись</button>
@@ -503,15 +535,15 @@
           <table>
             <colgroup>
               <col class="col-slot" />
-              <col class="col-user" />
-              <col class="col-topic" />
+              <col id="userCol" class="col-user" />
+              <col id="topicCol" class="col-topic" />
               <col id="adminActionCol" class="col-action" style="display: none;" />
             </colgroup>
             <thead>
               <tr>
                 <th>№</th>
                 <th>Участник</th>
-                <th>Тема выступления</th>
+                <th id="topicHeader">Тема выступления</th>
                 <th id="adminActionHeader" style="display: none;"></th>
               </tr>
             </thead>
@@ -559,11 +591,17 @@
       <label for="newEventSlots">Количество мест в очереди:</label>
       <input id="newEventSlots" type="number" min="1" max="100" value="17" />
 
-      <label for="newEventTopics">Список тем (каждая тема с новой строки):</label>
+      <label class="checkbox-row" for="newEventNoTopics">
+          <input id="newEventNoTopics" type="checkbox" onchange="toggleNoTopicsMode()" />
+          <span>Создать очередь без выбора тем</span>
+        </label>
+        <div id="newEventTopicsWrap">
+        <label for="newEventTopics">Список тем (каждая тема с новой строки):</label>
       <textarea
         id="newEventTopics"
         placeholder="Тема 1.;&#10;Тема 2.;&#10;Если оставить пустым, темы пронумеруются автоматически"
       ></textarea>
+        </div>
 
       <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
     </div>
@@ -802,6 +840,7 @@
       contentEl.style.display = 'block';
 
       const bookings = currentEvent.bookings || [];
+      const noTopics = Boolean(currentEvent.noTopics);
       const takenCount = bookings.length;
       const totalSlots = currentEvent.totalSlots;
 
@@ -816,11 +855,17 @@
       const isRepeatMode = minUsage > 0;
 
       document.getElementById('currentEventTitle').textContent = currentEvent.title;
-      document.getElementById('currentEventMeta').textContent = isRepeatMode
+      document.getElementById('currentEventMeta').textContent = noTopics
+        ? `Занято мест: ${takenCount} из ${totalSlots}`
+        : isRepeatMode
         ? `Занято мест: ${takenCount} из ${totalSlots} • Идет повторный круг выбора тем`
         : `Занято мест: ${takenCount} из ${totalSlots} • Свободных уникальных тем: ${selectableTopics.length}`;
 
       const isAdmin = Boolean(adminCreds);
+
+      document.getElementById('topicCol').style.display = noTopics ? 'none' : '';
+      document.getElementById('topicHeader').style.display = noTopics ? 'none' : '';
+      document.getElementById('userCol').style.width = noTopics ? 'auto' : '';
       document.getElementById('deleteEventBtn').style.display = isAdmin ? 'inline-block' : 'none';
       document.getElementById('adminActionHeader').style.display = isAdmin ? 'table-cell' : 'none';
       document.getElementById('adminActionCol').style.display = isAdmin ? 'table-column' : 'none';
@@ -837,9 +882,12 @@
         myCardEl.style.display = 'block';
         document.getElementById('mySlot').textContent = myEntry.slot;
         document.getElementById('myTopic').textContent = myEntry.topic;
+        document.getElementById('myTopicLine').style.display = noTopics ? 'none' : '';
         lastOptionsSignature = 'BOOKED';
       } else {
         formEl.style.display = 'block';
+        document.getElementById('topicSelectLabel').style.display = noTopics ? 'none' : '';
+        document.getElementById('topicSelect').style.display = noTopics ? 'none' : '';
         myCardEl.style.display = 'none';
 
         const takenSlots = new Set(bookings.map(b => Number(b.slot)));
@@ -889,7 +937,7 @@
           }
 
           document.getElementById('bookBtn').disabled =
-            freeSlots.length === 0 || selectableTopics.length === 0;
+            freeSlots.length === 0 || (!noTopics && selectableTopics.length === 0);
 
           lastOptionsSignature = newSignature;
         }
@@ -925,16 +973,14 @@
               <strong>${escapeHtml(entry.userName)}</strong>
               ${entry.username ? `<span class="username">${escapeHtml(entry.username)}</span>` : ''}
             </td>
-            <td>
-              <span>${escapeHtml(entry.topic)}</span>${isRepeat ? `<span class="repeat-badge">(повторяется)</span>` : ''}
-            </td>
+            ${noTopics ? '' : `<td><span>${escapeHtml(entry.topic)}</span>${isRepeat ? `<span class="repeat-badge">(повторяется)</span>` : ''}</td>`}
             ${isAdmin ? `<td><button class="kick-btn" title="Освободить место" onclick="adminRemoveSlot(${i})">✕</button></td>` : ''}
           `;
         } else {
           tr.innerHTML = `
             <td><span class="slot-badge">${i}</span></td>
             <td class="free-label">Свободно</td>
-            <td class="free-label">—</td>
+            ${noTopics ? '' : '<td class="free-label">—</td>'}
             ${isAdmin ? `<td></td>` : ''}
           `;
         }
@@ -992,12 +1038,18 @@
       document.getElementById('createModal').classList.remove('open');
     }
 
+    function toggleNoTopicsMode() {
+      const checked = document.getElementById('newEventNoTopics').checked;
+      document.getElementById('newEventTopicsWrap').style.display = checked ? 'none' : '';
+    }
+
     async function createNewEvent() {
       if (!adminCreds) return;
       const title = document.getElementById('newEventTitle').value.trim();
       const totalSlots = Number(document.getElementById('newEventSlots').value) || 17;
       const rawTopics = document.getElementById('newEventTopics').value;
-      const topics = rawTopics.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const noTopics = document.getElementById('newEventNoTopics').checked;
+      const topics = noTopics ? [] : rawTopics.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
 
       if (!title) {
         showStatus('Укажите название выступления', true);
@@ -1017,6 +1069,7 @@
             title,
             totalSlots,
             topics,
+            noTopics,
             adminLogin: adminCreds.login,
             adminPassword: adminCreds.password
           })
@@ -1030,6 +1083,8 @@
         lastTabsSignature = '';
         document.getElementById('newEventTitle').value = '';
         document.getElementById('newEventTopics').value = '';
+        document.getElementById('newEventNoTopics').checked = false;
+        document.getElementById('newEventTopicsWrap').style.display = '';
         closeCreateModal();
         renderUI();
         showStatus('Новая очередь создана!');
