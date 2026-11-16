@@ -592,7 +592,7 @@
       />
 
       <label for="newEventSlots">Количество мест в очереди:</label>
-      <input id="newEventSlots" type="number" min="1" max="100" value="17" />
+      <input id="newEventSlots" type="number" min="1" max="100" value="17" oninput="refreshCreatorOptions()" />
 
       <label class="checkbox-row" for="newEventNoTopics">
           <input id="newEventNoTopics" type="checkbox" onchange="toggleNoTopicsMode()" />
@@ -602,11 +602,20 @@
         <label for="newEventTopics">Список тем (каждая тема с новой строки):</label>
       <textarea
         id="newEventTopics"
+        oninput="refreshCreatorOptions()"
         placeholder="Тема 1.;&#10;Тема 2.;&#10;Если оставить пустым, темы пронумеруются автоматически"
       ></textarea>
         </div>
 
-      <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
+      <label for="creatorSlotSelect">Ваше место в очереди:</label>
+        <select id="creatorSlotSelect" onchange="refreshCreatorOptions()"></select>
+
+        <div id="creatorTopicWrap" style="display: none;">
+          <label for="creatorTopicSelect">Ваша тема:</label>
+          <select id="creatorTopicSelect"></select>
+        </div>
+
+        <button class="primary" id="createEventBtn" onclick="createNewEvent()">Создать запись</button>
     </div>
   </div>
 
@@ -819,7 +828,7 @@
     }
 
     async function loadEvents(isBackgroundPoll = false) {
-      if (isPolling || (isBackgroundPoll && (isMutating || isDraggingTabs))) return;
+      if (isPolling || (isBackgroundPoll && (isMutating || isDraggingTabs || document.querySelector('.modal-backdrop.open')))) return;
       isPolling = true;
 
       try {
@@ -1050,15 +1059,67 @@
 
     function openCreateModal() {
       document.getElementById('createModal').classList.add('open');
+      refreshCreatorOptions();
+      document.getElementById('newEventTitle').focus();
     }
 
     function closeCreateModal() {
       document.getElementById('createModal').classList.remove('open');
     }
 
+    function getCreateSlotsCount() {
+      return Math.min(Math.max(Number(document.getElementById('newEventSlots').value) || 17, 1), 100);
+    }
+
+    function getCreateTopicsList() {
+      if (document.getElementById('newEventNoTopics').checked) return [];
+      const raw = document.getElementById('newEventTopics').value;
+      let list = [...new Set(raw.split(/\r?\n/).map(s => s.trim().slice(0, 240)).filter(Boolean))].slice(0, 150);
+      if (list.length === 0) {
+        list = Array.from({ length: getCreateSlotsCount() }, (_, i) => String(i + 1));
+      }
+      return list;
+    }
+
+    function refreshCreatorOptions() {
+      const slotSel = document.getElementById('creatorSlotSelect');
+      const topicSel = document.getElementById('creatorTopicSelect');
+      const noTopics = document.getElementById('newEventNoTopics').checked;
+      const slots = getCreateSlotsCount();
+      const prevSlot = slotSel.value;
+      const prevTopic = topicSel.value;
+
+      slotSel.innerHTML = '';
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '';
+      noneOpt.textContent = 'Не записываться';
+      slotSel.appendChild(noneOpt);
+      for (let i = 1; i <= slots; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = i;
+        slotSel.appendChild(opt);
+      }
+      if (prevSlot && Number(prevSlot) <= slots) slotSel.value = prevSlot;
+
+      const topics = getCreateTopicsList();
+      topicSel.innerHTML = '';
+      topics.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        topicSel.appendChild(opt);
+      });
+      if (prevTopic && topics.includes(prevTopic)) topicSel.value = prevTopic;
+
+      document.getElementById('creatorTopicWrap').style.display =
+        (slotSel.value && !noTopics) ? 'block' : 'none';
+    }
+
     function toggleNoTopicsMode() {
       const checked = document.getElementById('newEventNoTopics').checked;
       document.getElementById('newEventTopicsWrap').style.display = checked ? 'none' : '';
+      refreshCreatorOptions();
     }
 
     async function createNewEvent() {
@@ -1074,6 +1135,9 @@
         return;
       }
 
+      const creatorSlot = document.getElementById('creatorSlotSelect').value;
+      const creatorTopic = noTopics ? '' : document.getElementById('creatorTopicSelect').value;
+
       const btn = document.getElementById('createEventBtn');
       btn.disabled = true;
       isMutating = true;
@@ -1088,6 +1152,10 @@
             totalSlots,
             topics,
             noTopics,
+            creatorSlot,
+            creatorTopic,
+            user: currentUser,
+            initData: rawInitData,
             adminLogin: adminCreds.login,
             adminPassword: adminCreds.password
           })
@@ -1103,6 +1171,8 @@
         document.getElementById('newEventTopics').value = '';
         document.getElementById('newEventNoTopics').checked = false;
         document.getElementById('newEventTopicsWrap').style.display = '';
+        document.getElementById('creatorSlotSelect').value = '';
+        refreshCreatorOptions();
         closeCreateModal();
         renderUI();
         showStatus('Новая очередь создана!');
@@ -1120,6 +1190,9 @@
       if (!ev) return;
       document.getElementById('renameEventInput').value = ev.title;
       document.getElementById('renameModal').classList.add('open');
+      const renameInput = document.getElementById('renameEventInput');
+      renameInput.focus();
+      renameInput.setSelectionRange(renameInput.value.length, renameInput.value.length);
     }
 
     function closeRenameModal() {
