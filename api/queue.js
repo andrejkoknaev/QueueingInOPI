@@ -8,6 +8,8 @@ const redis = new Redis({
 
 const REDIS_KEY = 'tg_queue_events_v2';
 const SUBSCRIBERS_KEY = 'tg_queue_subscribers_v1';
+const UNSUBSCRIBED_KEY = 'tg_queue_unsubscribed_v1';
+const OFFSET_KEY = 'tg_queue_tg_offset_v1';
 const LOCK_KEY = 'tg_queue_mutex_lock';
 
 const DEFAULT_EVENTS = [
@@ -54,11 +56,111 @@ function verifyTelegramInitData(initDataRaw) {
   }
 }
 
+async function sendTelegramMessage(botToken, chatId, text) {
+  if (!botToken || !chatId) return null;
+  try {
+    return await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML'
+      })
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function saveSubscriber(userId) {
   const idStr = String(userId || '').trim();
   if (!/^\d+$/.test(idStr)) return;
   try {
+    const optedOut = await redis.sismember(UNSUBSCRIBED_KEY, idStr);
+    if (optedOut) return;
     await redis.sadd(SUBSCRIBERS_KEY, idStr);
+  } catch {}
+}
+
+async function subscribeUserForce(userId) {
+  const idStr = String(userId || '').trim();
+  if (!/^\d+$/.test(idStr)) return;
+  try {
+    await redis.srem(UNSUBSCRIBED_KEY, idStr);
+    await redis.sadd(SUBSCRIBERS_KEY, idStr);
+  } catch {}
+}
+
+async function unsubscribeUser(userId) {
+  const idStr = String(userId || '').trim();
+  if (!/^\d+$/.test(idStr)) return;
+  try {
+    await redis.srem(SUBSCRIBERS_KEY, idStr);
+    await redis.sadd(UNSUBSCRIBED_KEY, idStr);
+  } catch {}
+}
+
+async function handleTelegramUpdate(update, botToken, sendReply = true) {
+  const msg = update?.message;
+  const chatId = msg?.chat?.id || update?.my_chat_member?.chat?.id;
+  if (!chatId || Number(chatId) <= 0) return;
+
+  const memberStatus = update?.my_chat_member?.new_chat_member?.status;
+  if (memberStatus === 'kicked' || memberStatus === 'left') {
+    await unsubscribeUser(chatId);
+    return;
+  }
+
+  const text = String(msg?.text || '').trim();
+  if (/^\/stop(@\w+)?(\s|$)/i.test(text)) {
+    await unsubscribeUser(chatId);
+    if (sendReply) {
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        '🔕 Уведомления о новых очередях остановлены.\n\nЧтобы снова получать оповещения, отправьте /start.'
+      );
+    }
+    return;
+  }
+
+  if (/^\/start(@\w+)?(\s|$)/i.test(text)) {
+    await subscribeUserForce(chatId);
+    if (sendReply) {
+      await sendTelegramMessage(
+        botToken,
+        chatId,
+        '🔔 Уведомления о новых очередях включены.\n\nЧтобы остановить рассылку, отправьте /stop.'
+      );
+    }
+    return;
+  }
+
+  if (msg?.chat?.id) {
+    await saveSubscriber(chatId);
+  }
+}
+
+async function syncUpdatesFromTelegram(botToken) {
+  try {
+    const savedOffset = await redis.get(OFFSET_KEY);
+    const query = savedOffset ? `?limit=100&offset=${savedOffset}` : '?limit=100';
+    const updatesRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates${query}`);
+    if (!updatesRes.ok) return;
+
+    const updatesData = await updatesRes.json();
+    if (!Array.isArray(updatesData.result) || updatesData.result.length === 0) return;
+
+    let maxUpdateId = 0;
+    for (const upd of updatesData.result) {
+      if (upd.update_id > maxUpdateId) maxUpdateId = upd.update_id;
+      await handleTelegramUpdate(upd, botToken, true);
+    }
+
+    if (maxUpdateId > 0) {
+      await redis.set(OFFSET_KEY, maxUpdateId + 1);
+    }
   } catch {}
 }
 
@@ -66,23 +168,10 @@ async function broadcastNewEvent(eventTitle, slotsCount, noTopicsMode = false) {
   const botToken = (process.env.BOT_TOKEN || '').trim();
   if (!botToken) return;
 
-  try {
-    const updatesRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=100`);
-    if (updatesRes.ok) {
-      const updatesData = await updatesRes.json();
-      if (Array.isArray(updatesData.result)) {
-        for (const upd of updatesData.result) {
-          const chatId = upd?.message?.chat?.id || upd?.my_chat_member?.chat?.id;
-          if (chatId && Number(chatId) > 0) {
-            await saveSubscriber(chatId);
-          }
-        }
-      }
-    }
-  } catch {}
+  await syncUpdatesFromTelegram(botToken);
 
   try {
-    const subscribers = (await redis.smembers(SUBSCRIBERS_KEY)) || [];
+    const subscribers = (await redis.sdiff(SUBSCRIBERS_KEY, UNSUBSCRIBED_KEY)) || [];
     if (!subscribers.length) return;
 
     const safeTitle = eventTitle.replace(/[<>&]/g, '');
@@ -91,21 +180,16 @@ async function broadcastNewEvent(eventTitle, slotsCount, noTopicsMode = false) {
       `📌 <b>${safeTitle}</b>\n` +
       `👥 Мест в очереди: <b>${slotsCount}</b>\n\n` +
       (noTopicsMode
-        ? `Откройте мини-приложение в боте, чтобы выбрать место.`
-        : `Откройте мини-приложение в боте, чтобы выбрать место и тему.`);
+        ? `Откройте мини-приложение в боте, чтобы выбрать место.\n\n<i>Отключить рассылку: /stop</i>`
+        : `Откройте мини-приложение в боте, чтобы выбрать место и тему.\n\n<i>Отключить рассылку: /stop</i>`);
 
     await Promise.allSettled(
-      subscribers.map(chatId =>
-        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML'
-          })
-        })
-      )
+      subscribers.map(async chatId => {
+        const resp = await sendTelegramMessage(botToken, chatId, text);
+        if (resp && resp.status === 403) {
+          await unsubscribeUser(chatId);
+        }
+      })
     );
   } catch {}
 }
@@ -142,6 +226,14 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      const body = req.body || {};
+
+      if (body.update_id !== undefined && (body.message || body.my_chat_member)) {
+        const botToken = (process.env.BOT_TOKEN || '').trim();
+        await handleTelegramUpdate(body, botToken, true);
+        return res.status(200).json({ ok: true });
+      }
+
       const {
         action,
         eventId,
@@ -157,7 +249,7 @@ export default async function handler(req, res) {
         initData,
         adminLogin,
         adminPassword
-      } = req.body || {};
+      } = body;
 
       if (action === 'register_user') {
         const verifiedUser = verifyTelegramInitData(initData);
@@ -354,7 +446,7 @@ export default async function handler(req, res) {
           }
           if (bookings.some(b => Number(b.slot) === slotNum)) {
             return res.status(409).json({
-              error: `⚡ Место ${slotNum} заняли долей секунды раньше! Выберите другое.`,
+              error: `⚡️ Место ${slotNum} заняли долей секунды раньше! Выберите другое.`,
               events
             });
           }
@@ -370,7 +462,7 @@ export default async function handler(req, res) {
 
           if (!currentEvent.noTopics && !allowedTopics.includes(topicStr)) {
             return res.status(409).json({
-              error: '⚡ Эту тему перехватили долей секунды раньше! Выберите другую.',
+              error: '⚡️ Эту тему перехватили долей секунды раньше! Выберите другую.',
               events
             });
           }
