@@ -9,8 +9,14 @@ const redis = new Redis({
 const REDIS_KEY = 'tg_queue_events_v2';
 const SUBSCRIBERS_KEY = 'tg_queue_subscribers_v1';
 const UNSUBSCRIBED_KEY = 'tg_queue_unsubscribed_v1';
+const PINNED_COMMANDS_KEY = 'tg_queue_pinned_commands_v1';
 const OFFSET_KEY = 'tg_queue_tg_offset_v1';
 const LOCK_KEY = 'tg_queue_mutex_lock';
+
+const COMMANDS_PIN_TEXT =
+  `📌 <b>Команды бота:</b>\n\n` +
+  `/start — включить рассылку (о создании новой очереди от бота)\n` +
+  `/stop — отключить рассылку (о создании новой очереди от бота)`;
 
 const DEFAULT_EVENTS = [
   {
@@ -56,7 +62,7 @@ function verifyTelegramInitData(initDataRaw) {
   }
 }
 
-async function sendTelegramMessage(botToken, chatId, text) {
+async function sendTelegramMessage(botToken, chatId, text, disableNotification = false) {
   if (!botToken || !chatId) return null;
   try {
     return await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -65,7 +71,25 @@ async function sendTelegramMessage(botToken, chatId, text) {
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: 'HTML'
+        parse_mode: 'HTML',
+        disable_notification: Boolean(disableNotification)
+      })
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function pinTelegramMessage(botToken, chatId, messageId) {
+  if (!botToken || !chatId || !messageId) return null;
+  try {
+    return await fetch(`https://api.telegram.org/bot${botToken}/pinChatMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        disable_notification: true
       })
     });
   } catch {
@@ -171,8 +195,16 @@ async function broadcastNewEvent(eventTitle, slotsCount, noTopicsMode = false) {
   await syncUpdatesFromTelegram(botToken);
 
   try {
-    const subscribers = (await redis.sdiff(SUBSCRIBERS_KEY, UNSUBSCRIBED_KEY)) || [];
+    const [subscribersRaw, pinnedRaw] = await Promise.all([
+      redis.sdiff(SUBSCRIBERS_KEY, UNSUBSCRIBED_KEY),
+      redis.smembers(PINNED_COMMANDS_KEY)
+    ]);
+
+    const subscribers = subscribersRaw || [];
     if (!subscribers.length) return;
+
+    const pinnedSet = new Set((pinnedRaw || []).map(String));
+    const newlyPinned = [];
 
     const safeTitle = eventTitle.replace(/[<>&]/g, '');
     const text =
@@ -185,12 +217,38 @@ async function broadcastNewEvent(eventTitle, slotsCount, noTopicsMode = false) {
 
     await Promise.allSettled(
       subscribers.map(async chatId => {
-        const resp = await sendTelegramMessage(botToken, chatId, text);
+        const idStr = String(chatId);
+
+        if (!pinnedSet.has(idStr)) {
+          const pinMsgResp = await sendTelegramMessage(botToken, idStr, COMMANDS_PIN_TEXT, true);
+          if (pinMsgResp && pinMsgResp.status === 403) {
+            await unsubscribeUser(idStr);
+            return;
+          }
+          if (pinMsgResp && pinMsgResp.ok) {
+            try {
+              const pinMsgData = await pinMsgResp.json();
+              const msgId = pinMsgData?.result?.message_id;
+              if (msgId) {
+                const pinResp = await pinTelegramMessage(botToken, idStr, msgId);
+                if (pinResp && pinResp.ok) {
+                  newlyPinned.push(idStr);
+                }
+              }
+            } catch {}
+          }
+        }
+
+        const resp = await sendTelegramMessage(botToken, idStr, text);
         if (resp && resp.status === 403) {
-          await unsubscribeUser(chatId);
+          await unsubscribeUser(idStr);
         }
       })
     );
+
+    if (newlyPinned.length > 0) {
+      await redis.sadd(PINNED_COMMANDS_KEY, ...newlyPinned);
+    }
   } catch {}
 }
 
